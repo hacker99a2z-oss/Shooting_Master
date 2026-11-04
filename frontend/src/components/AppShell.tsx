@@ -14,7 +14,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
   const { data } = usePlayer();
   const initial = (data?.name || "?").charAt(0).toUpperCase();
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-background text-foreground">
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col text-foreground">
       <header className="px-5 pt-5">
         <div className="flex items-center gap-3 rounded-3xl border bg-card p-3 text-card-foreground shadow-card">
           {data?.photoUrl ? (
