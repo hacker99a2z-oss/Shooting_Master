@@ -56,7 +56,7 @@ async function verifyTelegram(initData:unknown,env:Env):Promise<AuthUser>{
   return {id:user.id,firstName:user.first_name.slice(0,80),username:user.username?.slice(0,64)??null,photoUrl:user.photo_url?.slice(0,500)??null};
 }
 async function playerRow(db:any,tgId:number,tx?:any):Promise<Row|undefined>{
-  const r=await (tx??db).execute({sql:"SELECT * FROM players WHERE tg_id=?",args:[tgId]});
+  const r=await (tx??db).execute({sql:"SELECT p.*,(SELECT COUNT(*) FROM players AS joined WHERE joined.referred_by=p.tg_id) AS joined_referral_count,(SELECT COUNT(*) FROM players AS rewarded WHERE rewarded.referred_by=p.tg_id AND rewarded.referral_paid=1) AS paid_referral_count FROM players AS p WHERE p.tg_id=?",args:[tgId]});
   return r.rows[0] as Row|undefined;
 }
 function view(row:Row){
@@ -64,7 +64,7 @@ function view(row:Row){
   return {tgId:Number(row.tg_id),name:String(row.first_name),username:row.username==null?null:String(row.username),
     coins:Number(row.coins),seasonCoins:Number(row.season_id)===sid?Number(row.season_coins):0,
     canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
-    bestScore:Number(row.best_score),referralCount:Number(row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
+    bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
     dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t};
 }
@@ -73,7 +73,7 @@ async function ensurePlayer(db:any,user:AuthUser,startParam=""){
   if(m&&Number(m[1])!==user.id&&Number.isSafeInteger(Number(m[1])))referrer=Number(m[1]);
   await db.execute({sql:"INSERT OR IGNORE INTO players (tg_id,first_name,username,photo_url,referred_by,coins,season_coins,season_id,games_played,best_score,daily_games,extra_plays,referral_count,referral_paid,created_at) VALUES (?,?,?,?,?,0,0,?,0,0,0,0,0,0,?)",
     args:[user.id,user.firstName,user.username,user.photoUrl,referrer,seasonId(),new Date().toISOString()]});
-  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=? WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,user.id]});
+  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 AND games_played=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
   const row=await playerRow(db,user.id);if(!row)throw new Error("Could not create player");return row;
 }
 async function txRun(db:any,fn:(tx:any)=>Promise<any>){
