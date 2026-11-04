@@ -100,6 +100,6 @@ jobs:
         run: |
           BODY="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$WORKER_URL/health")"
           printf '%s' "$BODY" | grep -Fq '"ok":true'
-          curl --fail --silent --show-error -I -H "Origin: https://shooting-master.pages.dev" "$WORKER_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
+          curl --fail --silent --show-error -D - -o /dev/null -H "Origin: https://shooting-master.pages.dev" "$WORKER_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
       - name: Smoke-test Pages homepage
         run: curl --fail --silent --show-error --retry 8 --retry-delay 3 https://shooting-master.pages.dev/ -o /dev/null
