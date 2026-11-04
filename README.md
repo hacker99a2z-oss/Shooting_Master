@@ -17,7 +17,7 @@ Add these GitHub Actions repository secrets:
 - TURSO_AUTH_TOKEN
 - TELEGRAM_BOT_TOKEN
 
-Optional GitHub Actions variables: VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL, OFFICIAL_CHANNEL_URL, OFFICIAL_GROUP_URL. The Telegram bot username is fetched directly from the configured bot token during deployment. The last two add the matching buttons to the Telegram /start welcome message.
+Optional GitHub Actions variables: VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL, OFFICIAL_CHANNEL_URL, OFFICIAL_GROUP_URL. The Telegram bot username is fetched directly from the configured bot token during deployment. Set OFFICIAL_CHANNEL_URL and OFFICIAL_GROUP_URL to the real HTTPS Telegram channel/group links (for example, https://t.me/yourchannel or https://t.me/+invitecode); each configured link adds its matching button to the Telegram /start welcome message. Missing links are reported as deployment warnings rather than replaced with a non-working https://t.me/ homepage.
 
 The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev.
 
