@@ -14,6 +14,7 @@ export const startAdPlay=(data:Auth)=>post<{adSessionId:string;expiresAt:number}
 export type AdPlayStatus = Player & {verified:boolean; rewardPending:boolean; expired?:boolean};
 export const grantAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/complete",data);
 export const getAdPlayStatus=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/status",data);
+export const cancelAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus & {cancelled?:boolean}>("ad/cancel",data);
 export const claimDailyBonus=(data:Auth)=>post<Player & {bonus:number}>("bonus/claim",data);
 export type LeaderboardRow={rank:number;tgId:number;name:string;username:string|null;coins:number;prize:number;isMe:boolean};
 export const getLeaderboard=(data:Auth)=>post<{list:LeaderboardRow[];seasonEndsAt:number}>("leaderboard",data);
