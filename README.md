@@ -38,3 +38,14 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 - The leaderboard shows up to 50 players with at least 500 season coins; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
 - 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
 - Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.
+
+
+## AdsGram server-side reward confirmation
+
+After deploying the Worker, add a strong random `ADSGRAM_REWARD_SECRET` as a Worker Secret in Cloudflare Dashboard → Workers & Pages → `shooting-master-api` → Settings → Variables and Secrets. Do not commit the value or expose it as a Vite/frontend variable.
+
+Configure the AdsGram Reward URL as:
+
+`https://shooting-master-api.hacker99a2z.workers.dev/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
+
+Replace `YOUR_SHARED_SECRET` with the exact Worker Secret value. The client completion event only leaves a one-time ad session pending; the Worker grants the extra play only after this protected server callback. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so this shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
