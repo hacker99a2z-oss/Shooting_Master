@@ -1,3 +1,9 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+
 # Logs
 logs
 *.log
