@@ -38,43 +38,93 @@
   --color-ring: var(--ring);
 }
 
+/*
+ * Legacy color values are the default so older Android/Telegram WebViews
+ * still get a visible background and readable UI when they cannot parse oklch().
+ */
 :root {
   color-scheme: dark;
   --radius: 1.1rem;
-  --background: oklch(0.22 0.13 285);
-  --foreground: oklch(0.98 0.01 90);
-  --card: oklch(0.24 0.08 275 / 0.72);
-  --card-foreground: oklch(0.98 0.01 90);
-  --popover: oklch(0.25 0.055 260);
-  --popover-foreground: oklch(0.98 0.01 90);
-  --primary: oklch(0.86 0.18 85);
-  --primary-foreground: oklch(0.2 0.05 60);
-  --secondary: oklch(0.36 0.1 280 / 0.85);
-  --secondary-foreground: oklch(0.98 0.01 90);
-  --muted: oklch(0.34 0.08 275 / 0.85);
-  --muted-foreground: oklch(0.86 0.025 230);
-  --accent: oklch(0.7 0.23 10);
-  --accent-foreground: oklch(0.99 0.01 90);
-  --destructive: oklch(0.64 0.24 25);
-  --destructive-foreground: oklch(0.98 0 0);
-  --success: oklch(0.82 0.2 150);
-  --gold: oklch(0.88 0.17 88);
-  --hud-blue: oklch(0.75 0.17 220);
-  --hud-orange: oklch(0.74 0.2 45);
-  --border: oklch(0.72 0.08 220 / 0.5);
-  --input: oklch(0.38 0.045 250);
-  --ring: oklch(0.86 0.18 85);
+  --background: #241b50;
+  --foreground: #fff9e8;
+  --card: rgba(54, 39, 94, 0.78);
+  --card-foreground: #fff9e8;
+  --popover: #30265d;
+  --popover-foreground: #fff9e8;
+  --primary: #f4c84a;
+  --primary-foreground: #392b12;
+  --secondary: rgba(67, 55, 119, 0.92);
+  --secondary-foreground: #fff9e8;
+  --muted: rgba(70, 57, 111, 0.94);
+  --muted-foreground: #dce7f0;
+  --accent: #ed586e;
+  --accent-foreground: #fffaf5;
+  --destructive: #e64e55;
+  --destructive-foreground: #fff9e8;
+  --success: #36c982;
+  --gold: #f3c94c;
+  --hud-blue: #65b9ed;
+  --hud-orange: #ef913f;
+  --border: rgba(117, 190, 220, 0.55);
+  --input: #394b63;
+  --ring: #f4c84a;
 
-  --gradient-gold: linear-gradient(135deg, oklch(0.93 0.16 98), oklch(0.78 0.2 55));
-  --gradient-coral: linear-gradient(135deg, oklch(0.78 0.2 40), oklch(0.65 0.25 5));
+  --gradient-gold: linear-gradient(135deg, #ffe45b, #e98a2c);
+  --gradient-coral: linear-gradient(135deg, #f28b4b, #e64d60);
   --gradient-sky:
-    radial-gradient(60% 40% at 0% 0%, oklch(0.68 0.22 200 / 0.75) 0%, transparent 70%),
-    radial-gradient(55% 38% at 100% 10%, oklch(0.65 0.27 340 / 0.7) 0%, transparent 70%),
-    radial-gradient(60% 40% at 0% 65%, oklch(0.6 0.25 295 / 0.6) 0%, transparent 70%),
-    radial-gradient(70% 45% at 100% 100%, oklch(0.75 0.2 55 / 0.55) 0%, transparent 70%),
-    linear-gradient(165deg, oklch(0.3 0.15 265) 0%, oklch(0.22 0.13 290) 50%, oklch(0.25 0.12 230) 100%);
-  --shadow-glow: 0 10px 40px -8px color-mix(in oklab, var(--primary) 70%, transparent);
-  --shadow-card: 0 12px 32px -12px oklch(0.1 0.1 290 / 75%), inset 0 1px 0 oklch(1 0 0 / 16%), 0 0 0 1px oklch(0.75 0.17 220 / 0.3), 0 0 24px -6px oklch(0.65 0.27 340 / 0.35);
+    radial-gradient(60% 40% at 0% 0%, rgba(45, 180, 210, 0.75) 0%, transparent 70%),
+    radial-gradient(55% 38% at 100% 10%, rgba(225, 60, 150, 0.7) 0%, transparent 70%),
+    radial-gradient(60% 40% at 0% 65%, rgba(120, 80, 220, 0.6) 0%, transparent 70%),
+    radial-gradient(70% 45% at 100% 100%, rgba(235, 165, 60, 0.55) 0%, transparent 70%),
+    linear-gradient(165deg, #392b70 0%, #241b50 50%, #26355f 100%);
+
+  --shadow-glow: 0 10px 40px -8px rgba(244, 200, 74, 0.7);
+  --shadow-card: 0 12px 32px -12px rgba(15, 10, 35, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 1px rgba(117, 190, 220, 0.3), 0 0 24px -6px rgba(190, 65, 165, 0.35);
+}
+
+/* Keep the original high-fidelity palette on browsers with modern color support. */
+@supports (color: oklch(0 0 0)) {
+  :root {
+    --background: oklch(0.22 0.13 285);
+    --foreground: oklch(0.98 0.01 90);
+    --card: oklch(0.24 0.08 275 / 0.72);
+    --card-foreground: oklch(0.98 0.01 90);
+    --popover: oklch(0.25 0.055 260);
+    --popover-foreground: oklch(0.98 0.01 90);
+    --primary: oklch(0.86 0.18 85);
+    --primary-foreground: oklch(0.2 0.05 60);
+    --secondary: oklch(0.36 0.1 280 / 0.85);
+    --secondary-foreground: oklch(0.98 0.01 90);
+    --muted: oklch(0.34 0.08 275 / 0.85);
+    --muted-foreground: oklch(0.86 0.025 230);
+    --accent: oklch(0.7 0.23 10);
+    --accent-foreground: oklch(0.99 0.01 90);
+    --destructive: oklch(0.64 0.24 25);
+    --destructive-foreground: oklch(0.98 0 0);
+    --success: oklch(0.82 0.2 150);
+    --gold: oklch(0.88 0.17 88);
+    --hud-blue: oklch(0.75 0.17 220);
+    --hud-orange: oklch(0.74 0.2 45);
+    --border: oklch(0.72 0.08 220 / 0.5);
+    --input: oklch(0.38 0.045 250);
+    --ring: oklch(0.86 0.18 85);
+
+    --gradient-gold: linear-gradient(135deg, oklch(0.93 0.16 98), oklch(0.78 0.2 55));
+    --gradient-coral: linear-gradient(135deg, oklch(0.78 0.2 40), oklch(0.65 0.25 5));
+    --gradient-sky:
+      radial-gradient(60% 40% at 0% 0%, oklch(0.68 0.22 200 / 0.75) 0%, transparent 70%),
+      radial-gradient(55% 38% at 100% 10%, oklch(0.65 0.27 340 / 0.7) 0%, transparent 70%),
+      radial-gradient(60% 40% at 0% 65%, oklch(0.6 0.25 295 / 0.6) 0%, transparent 70%),
+      radial-gradient(70% 45% at 100% 100%, oklch(0.75 0.2 55 / 0.55) 0%, transparent 70%),
+      linear-gradient(165deg, oklch(0.3 0.15 265) 0%, oklch(0.22 0.13 290) 50%, oklch(0.25 0.12 230) 100%);
+  }
+}
+
+@supports (color: color-mix(in oklab, red, transparent)) {
+  :root {
+    --shadow-glow: 0 10px 40px -8px color-mix(in oklab, var(--primary) 70%, transparent);
+    --shadow-card: 0 12px 32px -12px oklch(0.1 0.1 290 / 75%), inset 0 1px 0 oklch(1 0 0 / 16%), 0 0 0 1px oklch(0.75 0.17 220 / 0.3), 0 0 24px -6px oklch(0.65 0.27 340 / 0.35);
+  }
 }
 
 @layer base {
@@ -86,7 +136,11 @@
     color: var(--foreground);
     font-family: var(--font-sans);
     background-color: var(--background);
-    background-image: none;
+    /* Static body gradient is a fallback if a WebView cannot paint the fixed pseudo-element. */
+    background-image: var(--gradient-sky);
+    background-repeat: no-repeat;
+    background-size: cover;
+    min-height: 100vh;
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
   }
@@ -106,6 +160,7 @@
   #root {
     position: relative;
     z-index: 1;
+    min-height: 100vh;
     min-height: 100dvh;
     background: transparent;
   }
@@ -142,7 +197,6 @@
 @utility animate-shine { animation: shine 2.6s ease-in-out infinite; }
 
 @keyframes aurora-move { 0% { transform: translate3d(-4%, -3%, 0) scale(1) } 100% { transform: translate3d(4%, 3%, 0) scale(1.08) } }
-
 
 /* Explicit color fallbacks for Telegram Android WebView and older embedded browsers. */
 .bg-background { background-color: var(--background); }
