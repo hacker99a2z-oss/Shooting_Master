@@ -1,3 +1,4 @@
 TURSO_DATABASE_URL=libsql://your-db-name-your-org.turso.io
 TURSO_AUTH_TOKEN=replace-me
 TELEGRAM_BOT_TOKEN=replace-me
+ADSGRAM_REWARD_SECRET=replace-with-a-long-random-secret
