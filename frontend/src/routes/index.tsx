@@ -5,7 +5,7 @@ import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target
 import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, claimDailyBonus } from "@/lib/api.functions";
+import { startGame, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import arenaBg from "@/assets/arena-bg.jpg";
@@ -62,33 +62,71 @@ function Home() {
   };
 
   const watchAd = async () => {
+    if (busy || playing) return;
     setBusy(true);
+    let adSessionId = "";
+    const showConfirmedReward = (player: Awaited<ReturnType<typeof getAdPlayStatus>>) => {
+      setPlayer(player);
+      haptic("success");
+      toast.success("Server verified the ad. Extra game unlocked!");
+    };
     try {
-      const adSession = await startAdPlay(auth());
-      const ok = await showRewardAd();
-      if (!ok) throw new Error("Watch the full ad to unlock a game");
-      const initial = await grantAdPlay({ ...auth(), adSessionId: adSession.adSessionId });
-      if (initial.verified) {
-        setPlayer(initial);
-        haptic("success");
-        toast.success("Extra game unlocked!");
+      // Each click creates a new one-time server session, then asks AdsGram for a fresh ad.
+      const session = await startAdPlay(auth());
+      adSessionId = session.adSessionId;
+
+      let adResult;
+      try {
+        adResult = await showRewardAd();
+      } catch (adError: any) {
+        // No fill, SDK error, or skip: cancel immediately so the next tap can request another ad.
+        const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
+        if (cancelled?.verified) {
+          showConfirmedReward(cancelled);
+          return;
+        }
+        const reason = adError?.message || "No ad is available right now.";
+        toast.info(`${reason} Tap again to load a fresh ad.`);
         return;
       }
-      setPlayer(initial);
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        const status = await getAdPlayStatus({ ...auth(), adSessionId: adSession.adSessionId });
+
+      if (!adResult.done) {
+        const cancelled = await cancelAdPlay({ ...auth(), adSessionId });
+        if (cancelled.verified) showConfirmedReward(cancelled);
+        else toast.info("The ad was not completed. Tap again to load a fresh ad.");
+        return;
+      }
+
+      const initial = await grantAdPlay({ ...auth(), adSessionId });
+      if (initial.verified) {
+        showConfirmedReward(initial);
+        return;
+      }
+
+      // The ad SDK finished; wait briefly for AdsGram's server-to-server Reward URL.
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        const status = await getAdPlayStatus({ ...auth(), adSessionId });
         if (status.verified) {
-          setPlayer(status);
-          haptic("success");
-          toast.success("Server verified the ad. Extra game unlocked!");
+          showConfirmedReward(status);
           return;
         }
         if (status.expired) break;
       }
-      toast.info("Ad watched. Server confirmation is still pending; your reward will appear once AdsGram confirms it.");
+
+      // Do not leave an old pending attempt blocking future ad requests.
+      const finalStatus = await cancelAdPlay({ ...auth(), adSessionId });
+      if (finalStatus.verified) showConfirmedReward(finalStatus);
+      else toast.info("AdsGram has not confirmed this ad yet. You can tap again to request a fresh ad.");
     } catch (e: any) {
-      toast.error(e?.description || e?.message || "Ad not available right now");
+      if (adSessionId) {
+        const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
+        if (cancelled?.verified) {
+          showConfirmedReward(cancelled);
+          return;
+        }
+      }
+      toast.error(e?.description || e?.message || "Ad could not be loaded. Please tap again to retry.");
     } finally {
       setBusy(false);
     }
