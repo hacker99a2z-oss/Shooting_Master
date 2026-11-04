@@ -105,32 +105,14 @@ async function telegramWebhook(request:Request,env:Env){
   const command=typeof message?.text==="string"?message.text.trim():"";
   if(chat?.type!=="private"||!/^\/start(?:@\w+)?(?:\s|$)/i.test(command))return json({ok:true});
   const text=[
-    "🎯 <b>WELCOME TO SHOOTING MASTER!</b>",
-    "Play, complete missions, earn coins and compete with players in this Telegram Mini App.",
-    "",
-    "🎮 <b>1. BATTLE ARENA</b>",
-    "Move around the arena, use your shield, aim and defeat 9–12 enemies. Earn <b>10 coins</b> for every enemy defeated.",
-    "",
-    "📅 <b>2. DAILY PLAY</b>",
-    "Get <b>one free game every day</b>. Complete your daily battle and keep improving your score.",
-    "",
-    "📺 <b>3. WATCH &amp; EARN</b>",
-    "Watch a rewarded AdsGram video to unlock extra plays. Extra-play rewards are added only after the server receives the ad reward confirmation. Up to 3 extra plays can be held at a time.",
-    "",
-    "🎁 <b>4. DAILY BONUS</b>",
-    "Complete <b>100 games in one day</b> to claim a daily bonus of <b>1,000–5,000 coins</b>. Claim once per day.",
-    "",
-    "🤝 <b>5. REFERRAL PROGRAM</b>",
-    "Invite friends with your personal referral link. Earn <b>100 coins</b> after your invited friend completes 10 games.",
-    "",
-    "🏆 <b>6. LEADERBOARD</b>",
-    "Compete in a new 48-hour season. The top 30 positions share a displayed <b>$10 prize pool</b>. Prize figures are estimates and are not automatic payouts.",
-    "",
-    "💳 <b>7. WITHDRAWALS</b>",
-    "Submit a withdrawal request with a supported EVM or TRON wallet. Minimum request: <b>$0.02</b>. Requests are manually reviewed; payment is not instant or automatic.",
-    "",
+    "🎮 <b>BATTLE ARENA:</b> Defeat 9–12 enemies and earn 10 coins per kill.",
+    "📅 <b>DAILY PLAY:</b> Get one free game every day; watch AdsGram videos for up to 3 extra plays.",
+    "🎁 <b>DAILY BONUS:</b> Play 100 games in one day to claim 1,000–5,000 bonus coins.",
+    "🤝 <b>REFERRALS:</b> Invite friends and earn 100 coins when a friend completes 10 games.",
+    "🏆 <b>LEADERBOARD:</b> Compete in 48-hour seasons; the top 30 share a displayed $10 prize pool.",
+    "💳 <b>WITHDRAWALS:</b> Request payment to a supported EVM or TRON wallet; all requests are manually reviewed.",
     "🚀 Tap <b>Open App</b> below to start playing!"
-  ].join("\n");
+
   const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
   ];
