@@ -90,8 +90,9 @@ function randomBonus(){return BONUS_MIN_COINS+Math.floor(Math.random()*((BONUS_M
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
 
 type StartKeyboardButton={text:string;url?:string;web_app?:{url:string}};
-function telegramLink(value?:string):value is string{
-  return typeof value==="string"&&/^https:\/\/t\.me\/[A-Za-z0-9_+.-]+(?:\?[A-Za-z0-9_=&%-]+)?$/.test(value);
+function telegramLink(value?:string):string|null{
+  const url=value?.trim()||"";
+  return /^https:\/\/t\.me\/[A-Za-z0-9_+.-]+(?:\?[A-Za-z0-9_=&%-]+)?$/.test(url)?url:null;
 }
 async function telegramWebhook(request:Request,env:Env){
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
@@ -112,8 +113,10 @@ async function telegramWebhook(request:Request,env:Env){
   const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
   ];
-  if(telegramLink(env.OFFICIAL_CHANNEL_URL))keyboard.push([{text:"📢 Official Channel",url:env.OFFICIAL_CHANNEL_URL}]);
-  if(telegramLink(env.OFFICIAL_GROUP_URL))keyboard.push([{text:"👥 Official Group",url:env.OFFICIAL_GROUP_URL}]);
+  const channelUrl=telegramLink(env.OFFICIAL_CHANNEL_URL);
+  const groupUrl=telegramLink(env.OFFICIAL_GROUP_URL);
+  if(channelUrl)keyboard.push([{text:"📢 Official Channel",url:channelUrl}]);
+  if(groupUrl)keyboard.push([{text:"👥 Official Group",url:groupUrl}]);
   const response=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/sendMessage",{
     method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({chat_id:chat.id,text,parse_mode:"HTML",disable_web_page_preview:true,reply_markup:{inline_keyboard:keyboard}})
