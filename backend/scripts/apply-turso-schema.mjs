@@ -1,18 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { createClient } from "@libsql/client";
 
-// Wrangler reads .dev.vars for local Worker execution; this script also reads it
-// so local schema setup works without exporting every value in the shell.
+// Read local-only Worker variables for manual migration runs.
 try {
   const local = await readFile(new URL("../.dev.vars", import.meta.url), "utf8");
   for (const line of local.split(/\r?\n/)) {
     const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-    if (match && process.env[match[1]!] === undefined) {
-      process.env[match[1]!] = match[2]!.replace(/^["']|["']$/g, "");
+    const key = match && match[1];
+    if (key && process.env[key] === undefined) {
+      process.env[key] = match[2].replace(/^["']|["']$/g, "");
     }
   }
 } catch {
-  // GitHub Actions supplies credentials through environment variables.
+  // CI injects the required values through the process environment.
 }
 
 const url = process.env.TURSO_DATABASE_URL;
