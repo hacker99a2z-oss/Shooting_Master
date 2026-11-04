@@ -76,6 +76,7 @@ jobs:
           printf '%s' "$TURSO_AUTH_TOKEN" | npx wrangler secret put TURSO_AUTH_TOKEN --config worker/wrangler.toml
           printf '%s' "$TELEGRAM_BOT_TOKEN" | npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
       - name: Register Telegram bot webhook
+        id: telegram
         env:
           WORKER_URL: ${{ steps.worker.outputs.url }}
         shell: bash
@@ -101,7 +102,15 @@ jobs:
             console.error("Telegram webhook registration failed:", result.description || response.status);
             process.exit(1);
           }
-          console.log("Telegram /start webhook registered.");
+          const meResponse = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+          const me = await meResponse.json();
+          if (!meResponse.ok || !me.ok || !me.result?.username) {
+            console.error("Could not read the Telegram bot username:", me.description || meResponse.status);
+            process.exit(1);
+          }
+          const { appendFileSync } = await import("node:fs");
+          appendFileSync(process.env.GITHUB_OUTPUT, `username=${me.result.username}\\n`);
+          console.log("Telegram /start webhook registered; bot username resolved.");
           NODE
       - name: Install frontend dependencies
         working-directory: frontend
@@ -110,7 +119,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ steps.worker.outputs.url }}
-          VITE_TELEGRAM_BOT_USERNAME: ${{ vars.VITE_TELEGRAM_BOT_USERNAME }}
+          VITE_TELEGRAM_BOT_USERNAME: ${{ steps.telegram.outputs.username }}
           VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
           VITE_SUPPORT_URL: ${{ vars.VITE_SUPPORT_URL }}
           VITE_PROOF_URL: ${{ vars.VITE_PROOF_URL }}
