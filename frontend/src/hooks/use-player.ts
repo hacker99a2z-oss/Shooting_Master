@@ -7,7 +7,8 @@ export function usePlayer() {
   const q = useQuery({
     queryKey: ["me"],
     queryFn: () => getMe({ ...auth(), startParam: startParam() }),
-    staleTime: 10_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
   });
   return { ...q, setPlayer: (p: Awaited<ReturnType<typeof getMe>>) => qc.setQueryData(["me"], p) };
 }
