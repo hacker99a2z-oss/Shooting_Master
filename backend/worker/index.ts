@@ -6,11 +6,12 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   APP_ORIGIN: string;
   PAYOUT_QUEUE: Queue;
+  ADSGRAM_REWARD_SECRET?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=300000;
+const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -88,6 +89,39 @@ function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T
 async function api(request:Request,env:Env,ctx:ExecutionContext){
   const path=new URL(request.url).pathname.replace(/\/+$/,"")||"/";
   if(request.method==="GET"&&path==="/health")return json({ok:true,service:"shooting-master-api"});
+  if(request.method==="GET"&&path==="/api/adsgram/reward"){
+    const url=new URL(request.url);
+    const suppliedKey=url.searchParams.get("key")||"";
+    const rawUserId=url.searchParams.get("userid")||url.searchParams.get("userId")||"";
+    if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram reward callback is not configured"},503);
+    if(!equal(suppliedKey,env.ADSGRAM_REWARD_SECRET))return json({error:"Unauthorized"},401);
+    if(!/^[1-9]\\d{0,18}$/.test(rawUserId))return json({error:"Invalid Telegram user ID"},400);
+    const tgId=Number(rawUserId);
+    if(!Number.isSafeInteger(tgId))return json({error:"Invalid Telegram user ID"},400);
+    const db=dbFor(env);
+    try{
+      const outcome=await txRun(db,async(tx)=>{
+        const player=await playerRow(db,tgId,tx);
+        if(!player)return {ok:false as const,status:404,error:"Player not found"};
+        const now=Date.now();
+        const pending=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=? ORDER BY created_at DESC LIMIT 2",args:[tgId,now]});
+        const session=pending.rows[0] as Row|undefined;
+        if(!session){
+          const recent=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status='rewarded' AND rewarded_at>? ORDER BY rewarded_at DESC LIMIT 1",args:[tgId,now-AD_TTL_MS]});
+          if(recent.rows.length)return {ok:true as const,duplicate:true};
+          return {ok:false as const,status:409,error:"No eligible ad session"};
+        }
+        if(pending.rows.length!==1)return {ok:false as const,status:409,error:"Multiple pending ad sessions"};
+        const claimed=await tx.execute({sql:"UPDATE ad_sessions SET status='rewarded',rewarded_at=? WHERE id=? AND tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=?",args:[now,String(session.id),tgId,now]});
+        if(claimed.rowsAffected!==1)return {ok:false as const,status:409,error:"Ad reward session already consumed"};
+        const credited=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,tgId]});
+        if(credited.rowsAffected!==1)throw new Error("Player not found");
+        return {ok:true as const,duplicate:false};
+      });
+      if(!outcome.ok)return json({error:outcome.error},outcome.status);
+      return json({ok:true,duplicate:outcome.duplicate});
+    }finally{db.close();}
+  }
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
   let body:Record<string,any>;
   try{body=await request.json() as Record<string,any>;}catch{return json({error:"Invalid JSON body"},400);}
@@ -150,7 +184,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         if(Number(p.extra_plays)>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
         if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>Date.now())throw new Error("Next ad unlocks soon — please wait");
-        const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status='created' AND expires_at>?",args:[user.id,Date.now()]});
+        const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,Date.now()]});
         if(Number(pending.rows[0]?.total??0)>=1)throw new Error("An ad session is already open");
         const adSessionId=crypto.randomUUID(),expiresAt=Date.now()+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,Date.now(),expiresAt]});
@@ -161,13 +195,33 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     if(path==="/api/ad/complete"){
       const id=typeof body.adSessionId==="string"?body.adSessionId.slice(0,64):"";
       const result=await txRun(db,async(tx)=>{
-        const claimed=await tx.execute({sql:"UPDATE ad_sessions SET status='rewarded',rewarded_at=? WHERE id=? AND tg_id=? AND status='created' AND expires_at>=?",args:[Date.now(),id,user.id,Date.now()]});
-        if(claimed.rowsAffected!==1)throw new Error("Ad session expired or already used");
-        const update=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,user.id]});
-        if(update.rowsAffected!==1)throw new Error("Player not found");
-        return view((await playerRow(db,user.id,tx))!);
+        const selected=await tx.execute({sql:"SELECT status,expires_at FROM ad_sessions WHERE id=? AND tg_id=?",args:[id,user.id]});
+        const session=selected.rows[0] as Row|undefined;
+        if(!session)throw new Error("Ad session not found");
+        if(Number(session.expires_at)<Date.now())throw new Error("Ad session expired");
+        let status=String(session.status);
+        if(status==="created"){
+          const marked=await tx.execute({sql:"UPDATE ad_sessions SET status='awaiting_postback' WHERE id=? AND tg_id=? AND status='created' AND expires_at>=?",args:[id,user.id,Date.now()]});
+          if(marked.rowsAffected===1)status="awaiting_postback";
+        }
+        if(status!=="awaiting_postback"&&status!=="rewarded")throw new Error("Ad session is not eligible for reward");
+        const player=await playerRow(db,user.id,tx);
+        if(!player)throw new Error("Player not found");
+        const verified=status==="rewarded";
+        return {...view(player),verified,rewardPending:!verified};
       });
       return json(result);
+    }
+    if(path==="/api/ad/status"){
+      const id=typeof body.adSessionId==="string"?body.adSessionId.slice(0,64):"";
+      if(!id)return json({error:"Ad session ID is required"},400);
+      const selected=await db.execute({sql:"SELECT status,expires_at FROM ad_sessions WHERE id=? AND tg_id=?",args:[id,user.id]});
+      const session=selected.rows[0] as Row|undefined;
+      if(!session)return json({error:"Ad session not found"},404);
+      const player=await playerRow(db,user.id);
+      if(!player)return json({error:"Player not found"},404);
+      const status=String(session.status),expired=Number(session.expires_at)<Date.now()&&status!=="rewarded";
+      return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
     }
     if(path==="/api/bonus/claim"){
       const result=await txRun(db,async(tx)=>{
