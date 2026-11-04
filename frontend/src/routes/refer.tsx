@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, Send, Gift, UserPlus, Gamepad2, Coins } from "lucide-react";
+import { Check, Copy, Send, Gift, UserPlus, Gamepad2, Coins } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
@@ -20,18 +21,60 @@ export const Route = createFileRoute("/refer")({
   component: Refer,
 });
 
+function fallbackCopy(text: string): boolean {
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.left = "-9999px";
+  field.style.top = "0";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.focus();
+  field.select();
+  field.setSelectionRange(0, field.value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    field.remove();
+  }
+  return copied;
+}
+
 function Refer() {
   const { data: me } = usePlayer();
+  const [copied, setCopied] = useState(false);
   const link = me ? `https://t.me/${BOT_USERNAME}?startapp=ref_${me.tgId}` : "";
 
   const copy = async () => {
-    await navigator.clipboard.writeText(link);
+    if (!link) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else if (!fallbackCopy(link)) {
+        throw new Error("Clipboard is unavailable");
+      }
+    } catch {
+      // Telegram and older Android WebViews may reject Clipboard API access.
+      if (!fallbackCopy(link)) {
+        toast.error("Copy failed", { description: "Please tap and hold the referral link to copy it." });
+        return;
+      }
+    }
+
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
     haptic("success");
-    toast.success("Link copied!");
+    toast.success("Copied!", { description: "Your referral link is ready to share." });
   };
+
   const share = () => {
     const text = `🎮 Play Coin Rush with me and earn coins every day!`;
-    openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+    if (link) openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   };
 
   const steps = [
@@ -50,10 +93,20 @@ function Refer() {
             <p className="font-display text-lg leading-tight"><span className="text-gold-gradient">+{REFERRAL_REWARD} coins</span> per friend</p>
           </div>
         </div>
-        <div className="truncate rounded-xl border border-dashed border-primary/40 bg-muted px-3 py-3 font-mono text-xs">{link || "…"}</div>
+        <button
+          type="button"
+          onClick={copy}
+          disabled={!me}
+          aria-label="Copy referral link"
+          className="block w-full truncate rounded-xl border border-dashed border-primary/40 bg-muted px-3 py-3 text-left font-mono text-xs transition-colors hover:border-primary active:scale-[0.99] disabled:opacity-60"
+          title="Tap to copy referral link"
+        >
+          {link || "…"}
+        </button>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <button onClick={copy} disabled={!me} className="flex items-center justify-center gap-2 rounded-2xl border bg-secondary py-3 font-medium active:scale-95 transition-transform">
-            <Copy className="h-4 w-4" /> Copy
+            {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            {copied ? "Copied!" : "Copy"}
           </button>
           <button onClick={share} disabled={!me} className="flex items-center justify-center gap-2 rounded-2xl bg-gold py-3 font-display text-lg text-primary-foreground shadow-glow active:scale-95 transition-transform">
             <Send className="h-4 w-4" /> Share
