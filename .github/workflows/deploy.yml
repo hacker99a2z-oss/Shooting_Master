@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      TURSO_DATABASE_URL: \${{ secrets.TURSO_DATABASE_URL }}
-      TURSO_AUTH_TOKEN: \${{ secrets.TURSO_AUTH_TOKEN }}
-      TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           for key in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID TURSO_DATABASE_URL TURSO_AUTH_TOKEN TELEGRAM_BOT_TOKEN; do
-            if [ -z "\${!key}" ]; then
+            if [ -z "${!key}" ]; then
               echo "::error::Missing GitHub Actions secret: $key"
               exit 1
             fi
@@ -75,11 +75,11 @@ jobs:
       - name: Build Pages frontend
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: \${{ steps.worker.outputs.url }}
-          VITE_TELEGRAM_BOT_USERNAME: \${{ vars.VITE_TELEGRAM_BOT_USERNAME }}
-          VITE_ADSGRAM_BLOCK_ID: \${{ vars.VITE_ADSGRAM_BLOCK_ID }}
-          VITE_SUPPORT_URL: \${{ vars.VITE_SUPPORT_URL }}
-          VITE_PROOF_URL: \${{ vars.VITE_PROOF_URL }}
+          VITE_API_BASE_URL: ${{ steps.worker.outputs.url }}
+          VITE_TELEGRAM_BOT_USERNAME: ${{ vars.VITE_TELEGRAM_BOT_USERNAME }}
+          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
+          VITE_SUPPORT_URL: ${{ vars.VITE_SUPPORT_URL }}
+          VITE_PROOF_URL: ${{ vars.VITE_PROOF_URL }}
         run: npm run build
       - name: Ensure Pages project exists
         working-directory: backend

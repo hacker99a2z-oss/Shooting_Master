@@ -10,14 +10,14 @@ permissions:
   contents: read
 jobs:
   import:
-    if: \${{ inputs.confirm_import }}
+    if: ${{ inputs.confirm_import }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SUPABASE_URL: \${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: \${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      TURSO_DATABASE_URL: \${{ secrets.TURSO_DATABASE_URL }}
-      TURSO_AUTH_TOKEN: \${{ secrets.TURSO_AUTH_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           for key in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY TURSO_DATABASE_URL TURSO_AUTH_TOKEN; do
-            if [ -z "\${!key}" ]; then echo "::error::Missing secret: $key"; exit 1; fi
+            if [ -z "${!key}" ]; then echo "::error::Missing secret: $key"; exit 1; fi
           done
       - name: Install backend tools
         working-directory: backend
