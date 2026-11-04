@@ -169,7 +169,7 @@ function Home() {
       <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
         <h3 className="mb-3 text-lg">How to win</h3>
         <ul className="space-y-3 text-sm">
-          <Tip icon={<Shield className="h-4 w-4" />} text="Hold the blue shield button to block bullets." />
+          <Tip icon={<Shield className="h-4 w-4" />} text="Hold the blue shield button and drag to point it any way." />
           <Tip icon={<Crosshair className="h-4 w-4" />} text="Hold the orange button, drag to aim, let go to shoot." />
           <Tip icon={<Target className="h-4 w-4" />} text={`Each battle has ${MIN_ENEMIES}–${MAX_ENEMIES} enemies. +${COINS_PER_KILL} coins for every one you take down.`} />
           <Tip icon={<Timer className="h-4 w-4" />} text="One free game every day. After that, watch ads to play more." />

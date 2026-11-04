@@ -39,36 +39,40 @@
 }
 
 :root {
-  --radius: 1rem;
-  --background: oklch(0.17 0.035 230);
-  --foreground: oklch(0.97 0.01 90);
-  --card: oklch(0.23 0.045 225);
-  --card-foreground: oklch(0.97 0.01 90);
-  --popover: oklch(0.23 0.045 225);
-  --popover-foreground: oklch(0.97 0.01 90);
-  --primary: oklch(0.84 0.17 80);
-  --primary-foreground: oklch(0.2 0.04 60);
-  --secondary: oklch(0.3 0.05 220);
-  --secondary-foreground: oklch(0.97 0.01 90);
-  --muted: oklch(0.28 0.04 225);
-  --muted-foreground: oklch(0.72 0.03 220);
-  --accent: oklch(0.7 0.19 25);
-  --accent-foreground: oklch(0.98 0.01 90);
-  --destructive: oklch(0.63 0.22 25);
+  --radius: 1.1rem;
+  --background: oklch(0.16 0.06 255);
+  --foreground: oklch(0.98 0.01 90);
+  --card: oklch(0.24 0.09 265 / 0.72);
+  --card-foreground: oklch(0.98 0.01 90);
+  --popover: oklch(0.24 0.09 265);
+  --popover-foreground: oklch(0.98 0.01 90);
+  --primary: oklch(0.86 0.18 85);
+  --primary-foreground: oklch(0.2 0.05 60);
+  --secondary: oklch(0.36 0.12 250);
+  --secondary-foreground: oklch(0.98 0.01 90);
+  --muted: oklch(0.3 0.09 260 / 0.8);
+  --muted-foreground: oklch(0.8 0.06 230);
+  --accent: oklch(0.7 0.23 10);
+  --accent-foreground: oklch(0.99 0.01 90);
+  --destructive: oklch(0.64 0.24 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --success: oklch(0.78 0.17 155);
-  --gold: oklch(0.87 0.16 88);
-  --hud-blue: oklch(0.68 0.18 245);
-  --hud-orange: oklch(0.72 0.19 50);
-  --border: oklch(0.36 0.05 220);
-  --input: oklch(0.34 0.05 220);
-  --ring: oklch(0.84 0.17 80);
+  --success: oklch(0.82 0.2 150);
+  --gold: oklch(0.88 0.17 88);
+  --hud-blue: oklch(0.75 0.17 220);
+  --hud-orange: oklch(0.74 0.2 45);
+  --border: oklch(0.7 0.14 220 / 0.35);
+  --input: oklch(0.4 0.1 250);
+  --ring: oklch(0.86 0.18 85);
 
-  --gradient-gold: linear-gradient(135deg, oklch(0.9 0.15 95), oklch(0.75 0.18 60));
-  --gradient-coral: linear-gradient(135deg, oklch(0.75 0.18 35), oklch(0.62 0.22 15));
-  --gradient-sky: radial-gradient(120% 80% at 50% 0%, oklch(0.32 0.08 210) 0%, oklch(0.17 0.035 230) 60%);
-  --shadow-glow: 0 10px 40px -8px color-mix(in oklab, var(--primary) 60%, transparent);
-  --shadow-card: 0 8px 24px -12px oklch(0 0 0 / 60%);
+  --gradient-gold: linear-gradient(135deg, oklch(0.93 0.16 98), oklch(0.78 0.2 55));
+  --gradient-coral: linear-gradient(135deg, oklch(0.78 0.2 40), oklch(0.65 0.25 5));
+  --gradient-sky:
+    radial-gradient(70% 45% at 10% 0%, oklch(0.62 0.2 200 / 0.55) 0%, transparent 70%),
+    radial-gradient(60% 40% at 95% 15%, oklch(0.62 0.25 0 / 0.45) 0%, transparent 70%),
+    radial-gradient(80% 50% at 50% 100%, oklch(0.7 0.19 55 / 0.35) 0%, transparent 70%),
+    linear-gradient(170deg, oklch(0.22 0.1 250) 0%, oklch(0.15 0.07 270) 55%, oklch(0.18 0.09 220) 100%);
+  --shadow-glow: 0 10px 40px -8px color-mix(in oklab, var(--primary) 70%, transparent);
+  --shadow-card: 0 10px 30px -12px oklch(0 0 0 / 70%), inset 0 1px 0 oklch(1 0 0 / 12%), 0 0 0 1px oklch(0.75 0.17 220 / 0.18);
 }
 
 @layer base {
@@ -79,10 +83,14 @@
     font-family: var(--font-sans);
     background-image: var(--gradient-sky);
     background-attachment: fixed;
+    background-size: 160% 160%;
+    animation: aurora 18s ease-in-out infinite alternate;
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
   }
   h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0.02em; }
+  h1 { background-image: linear-gradient(90deg, oklch(0.93 0.16 98), oklch(0.8 0.2 40), oklch(0.75 0.22 5)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bg-card { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 }
 
 @utility bg-gold { background-image: var(--gradient-gold); }
@@ -109,3 +117,5 @@
 @utility animate-spin-slow { animation: spin-slow 14s linear infinite; }
 @utility animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
 @utility animate-shine { animation: shine 2.6s ease-in-out infinite; }
+
+@keyframes aurora { 0% { background-position: 0% 0% } 100% { background-position: 100% 100% } }

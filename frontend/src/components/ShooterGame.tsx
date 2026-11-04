@@ -10,7 +10,7 @@ import { COINS_PER_KILL, wavePlan } from "@/lib/rules";
 // One hit kills (both sides). Cars/crates/barrels block bullets.
 // Every bullet (ours and theirs) takes 1 second to reach its target point.
 
-const TRAVEL_FRAMES = 60; // ~1s at 60fps
+const TRAVEL_FRAMES = 28; // ~0.45s at 60fps — faster bullets for both sides
 
 type Bullet = { x: number; y: number; vx: number; vy: number; enemy: boolean; life: number };
 type Enemy = { x: number; y: number; tx: number; ty: number; cool: number; warn: number; phase: number; flash: number; dir: number; dead: number; spin: number };
@@ -53,7 +53,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   const wrapRef = useRef<HTMLDivElement>(null);
   const endRef = useRef(onEnd);
   endRef.current = onEnd;
-  const input = useRef({ mx: 0, my: 0, shield: false, aiming: false, aimX: 0, aimY: 0, fire: false, aimInit: false });
+  const input = useRef({ mx: 0, my: 0, shieldA: -Math.PI / 2, shield: false, aiming: false, aimX: 0, aimY: 0, fire: false, aimInit: false });
   const [hud, setHud] = useState({ score: 0, kills: 0, total: 0 });
   const [countdown, setCountdown] = useState(3);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
@@ -61,6 +61,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   const [aimOn, setAimOn] = useState(false);
   const joy = useRef<{ id: number; cx: number; cy: number } | null>(null);
   const aimPtr = useRef<{ id: number; lx: number; ly: number } | null>(null);
+  const shieldPtr = useRef<{ id: number; cx: number; cy: number } | null>(null);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -87,7 +88,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
 
     // The arena is 3 screens wide; the camera follows the hero left and right.
     const WW = W * 3;
-    const p = { x: WW / 2, y: H * 0.8, walk: 0, dead: 0, shieldT: 0, recoil: 0, gunA: -Math.PI / 2 };
+    const p = { x: WW / 2, y: H * 0.8, walk: 0, dead: 0, shieldT: 0, recoil: 0, gunA: -Math.PI / 2, face: -Math.PI / 2, shieldA: -Math.PI / 2 };
     let camX = WW / 2 - W / 2;
     let enemies: Enemy[] = [], bullets: Bullet[] = [], parts: Part[] = [], floats: Float[] = [];
     let score = 0, kills = 0, shake = 0, spawnCd = 30, done = false, lastHud = 0, raf = 0;
@@ -113,7 +114,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
     // tx is unused; ty = how close (px) this enemy likes to get before strafing.
     const spawnEnemy = () => {
       const x = Math.max(40, Math.min(WW - 40, camX + 40 + Math.random() * (W - 80)));
-      enemies.push({ x, y: H * 0.3, tx: x, ty: 150 + Math.random() * 90, cool: 100 + Math.random() * 80, warn: 0, phase: Math.random() * 6, flash: 0, dir: Math.random() < 0.5 ? -1 : 1, dead: 0, spin: Math.random() < 0.5 ? -1 : 1 });
+      enemies.push({ x, y: H * 0.3, tx: x, ty: 150 + Math.random() * 90, cool: 60 + Math.random() * 50, warn: 0, phase: Math.random() * 6, flash: 0, dir: Math.random() < 0.5 ? -1 : 1, dead: 0, spin: Math.random() < 0.5 ? -1 : 1 });
     };
     const depth = (y: number) => 0.5 + 0.75 * Math.max(0, Math.min(1, y / H));
     const finish = (delay: number) => {
@@ -123,7 +124,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
     };
 
     // Red/black armored soldier facing the viewer. gunA = gun angle in world space.
-    const drawSoldier = (walk: number, gunA: number, flash: number, warn: boolean, sc: number) => {
+    const drawSoldier = (walk: number, gunA: number, flash: number, warn: boolean, sc: number, back = false) => {
       ctx.save(); ctx.scale(sc, sc);
       const step = Math.sin(walk) * 3;
       ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(0, 30, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
@@ -142,8 +143,15 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
       ctx.fillStyle = "#22242e"; ctx.beginPath(); ctx.ellipse(0, -38, 16, 15, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#c8202e"; ctx.beginPath(); ctx.ellipse(0, -50, 5, 4, 0, Math.PI, 0); ctx.fill(); ctx.fillRect(-2, -53, 4, 10);
       ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.ellipse(-6, -46, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.save(); ctx.shadowColor = COL.laser; ctx.shadowBlur = warn ? 18 : 8;
-      ctx.fillStyle = warn ? "#ffd0d0" : "#ff2b3a"; ctx.beginPath(); ctx.roundRect(-12, -41, 24, 7, 3.5); ctx.fill(); ctx.restore();
+      if (!back) {
+        ctx.save(); ctx.shadowColor = COL.laser; ctx.shadowBlur = warn ? 18 : 8;
+        ctx.fillStyle = warn ? "#ffd0d0" : "#ff2b3a"; ctx.beginPath(); ctx.roundRect(-12, -41, 24, 7, 3.5); ctx.fill(); ctx.restore();
+      } else {
+        // seen from behind: backpack + helmet strap instead of the visor
+        ctx.fillStyle = "#15161e"; ctx.fillRect(-10, -44, 20, 4);
+        ctx.fillStyle = "#3a3d4c"; ctx.beginPath(); ctx.roundRect(-11, -20, 22, 22, 5); ctx.fill();
+        ctx.fillStyle = "#c8202e"; ctx.fillRect(-11, -12, 22, 3);
+      }
       // arm + rifle
       ctx.save(); ctx.translate(10, -8); ctx.rotate(gunA);
       ctx.fillStyle = "#2a2c38"; ctx.beginPath(); ctx.roundRect(-4, -5, 18, 10, 5); ctx.fill();
@@ -158,7 +166,19 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
     const drawHero = (t: number) => {
       ctx.save(); ctx.translate(p.x, p.y);
       if (p.dead > 0) { ctx.rotate(p.dead * 1.4); ctx.globalAlpha = Math.max(0.2, 1 - p.dead * 0.6); }
-      ctx.save(); ctx.scale(1.2, 1.2);
+      // direction ring under the feet: shows where the hero faces (full 360°)
+      if (p.dead === 0) {
+        ctx.save(); ctx.translate(0, 36); ctx.scale(1, 0.35);
+        ctx.strokeStyle = "rgba(111,232,255,0.55)"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = COL.shield; ctx.shadowColor = COL.shield; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.moveTo(Math.cos(p.face) * 46, Math.sin(p.face) * 46);
+        ctx.lineTo(Math.cos(p.face + 0.35) * 30, Math.sin(p.face + 0.35) * 30); ctx.lineTo(Math.cos(p.face - 0.35) * 30, Math.sin(p.face - 0.35) * 30); ctx.fill();
+        ctx.restore();
+      }
+      // front view when facing the camera (moving down), back view otherwise; mirrored when facing left
+      const front = Math.sin(p.face) > 0.3;
+      const flip = Math.cos(p.face) < -0.2 ? -1 : 1;
+      ctx.save(); ctx.scale(1.2 * flip, 1.2);
       const step = Math.sin(p.walk) * 3;
       ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(0, 30, 24, 7, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#1a2440"; ctx.beginPath(); ctx.roundRect(-13, 6, 11, 22 + step, 4); ctx.roundRect(2, 6, 11, 22 - step, 4); ctx.fill();
@@ -179,9 +199,19 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
       for (const [bx, tx2, ty2] of [[-14, -18, -56], [-8, -8, -62], [0, 2, -64], [6, 12, -60], [12, 19, -52]] as const) { ctx.moveTo(bx, -48); ctx.lineTo(tx2, ty2); ctx.lineTo(bx + 8, -50); }
       ctx.fill();
       ctx.fillStyle = "#8a5530"; ctx.beginPath(); ctx.ellipse(-4, -46, 6, 3, -0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#2f6fe0"; ctx.fillRect(-16, -30, 32, 4);
+      if (front) {
+        // face toward the viewer
+        ctx.fillStyle = "#f0b48a"; ctx.beginPath(); ctx.ellipse(0, -36, 12, 11, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#6b3f1f"; ctx.beginPath(); ctx.ellipse(0, -47, 14, 6, 0, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = "#1a2440"; ctx.beginPath(); ctx.arc(-5, -37, 2.2, 0, Math.PI * 2); ctx.arc(5, -37, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#9a4a3a"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(0, -32, 4, 0.2, Math.PI - 0.2); ctx.stroke();
+        ctx.fillStyle = "#6b3f1f"; ctx.fillRect(-8, -42, 6, 1.6); ctx.fillRect(2, -42, 6, 1.6);
+      } else {
+        ctx.fillStyle = "#2f6fe0"; ctx.fillRect(-16, -30, 32, 4);
+      }
       // gun arm
-      ctx.save(); ctx.translate(14, -12); ctx.rotate(p.gunA);
+      ctx.save(); ctx.translate(14, -12);
+      { const ga = flip < 0 ? Math.PI - p.gunA : p.gunA; ctx.rotate(ga); }
       ctx.fillStyle = "#2f6fe0"; ctx.beginPath(); ctx.roundRect(-4, -5, 18, 10, 5); ctx.fill();
       ctx.fillStyle = "#c8d2e0"; ctx.beginPath(); ctx.roundRect(12, -5, 26, 9, 3); ctx.fill();
       ctx.fillStyle = COL.shield; ctx.fillRect(18, -3, 12, 2); ctx.fillStyle = "#3a4560"; ctx.fillRect(16, 3, 6, 8);
@@ -191,8 +221,11 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
       // energy shield: resting on the left arm, swings to the front when held
       const s = p.shieldT;
       if (p.dead === 0) {
-        const sx = -30 + s * 30, sy = -14 - s * 50, sw = 14 + s * 62, sh = 44 - s * 18;
-        ctx.save(); ctx.translate(sx, sy);
+        // rests on the left arm; when raised it sits on a circle around the hero at shieldA (any direction)
+        const ox = -30, oy = -14;
+        const tx = Math.cos(p.shieldA) * 52, ty = -24 + Math.sin(p.shieldA) * 46;
+        const sx = ox + (tx - ox) * s, sy = oy + (ty - oy) * s, sw = 14 + s * 62, sh = 44 - s * 18;
+        ctx.save(); ctx.translate(sx, sy); ctx.rotate(s * (p.shieldA + Math.PI / 2));
         ctx.shadowColor = COL.shield; ctx.shadowBlur = 12 + s * 22;
         const sg = ctx.createRadialGradient(0, 0, 2, 0, 0, Math.max(sw, sh) / 2);
         sg.addColorStop(0, `rgba(74,227,255,${0.15 + s * 0.2})`); sg.addColorStop(1, `rgba(47,111,224,${0.45 + s * 0.25})`);
@@ -210,7 +243,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
       ctx.save(); ctx.translate(e.x, e.y);
       if (e.dead > 0) { const k = Math.min(1, e.dead); ctx.translate(e.spin * k * 20, -Math.sin(k * Math.PI) * 25); ctx.rotate(e.spin * k * 1.6); ctx.globalAlpha = 1 - k; }
       const ang = Math.atan2(p.y - e.y, p.x - e.x);
-      drawSoldier(t / 120 + e.phase, ang, e.flash, e.warn > 0, depth(e.y));
+      drawSoldier(t / 120 + e.phase, ang, e.flash, e.warn > 0, depth(e.y), p.y < e.y - 30);
       ctx.restore();
       if (e.warn > 0 && e.dead === 0) {
         ctx.save(); ctx.globalAlpha = 0.35 * Math.abs(Math.sin(t / 50)); ctx.strokeStyle = COL.bulletEnemy; ctx.setLineDash([4, 6]); ctx.lineWidth = 2;
@@ -283,14 +316,21 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         const sp = (inp.shield ? 2.4 : 4.2) * dt;
         const nx = Math.max(28, Math.min(WW - 28, p.x + inp.mx * sp));
         if (!blocked(nx, p.y + HERO_FOOT)) p.x = nx;
-        const ny = Math.max(H * 0.42, Math.min(H - 40, p.y + inp.my * sp));
+        const ny = Math.max(70, Math.min(H - 40, p.y + inp.my * sp));
         if (!blocked(p.x, ny + HERO_FOOT)) p.y = ny;
-        if (Math.hypot(inp.mx, inp.my) > 0.1) p.walk += 0.25 * dt;
+        if (Math.hypot(inp.mx, inp.my) > 0.1) {
+          p.walk += 0.25 * dt;
+          // turn smoothly toward the stick direction (shortest way round)
+          const want = Math.atan2(inp.my, inp.mx);
+          let d = want - p.face; d = Math.atan2(Math.sin(d), Math.cos(d));
+          p.face += d * Math.min(1, 0.3 * dt);
+        }
       }
       // camera follows the hero left/right
       const camTarget = Math.max(0, Math.min(WW - W, p.x - W / 2));
       camX += (camTarget - camX) * Math.min(1, 0.15 * dt);
       p.shieldT += ((inp.shield ? 1 : 0) - p.shieldT) * 0.3 * dt;
+      { let d = inp.shieldA - p.shieldA; d = Math.atan2(Math.sin(d), Math.cos(d)); p.shieldA += d * Math.min(1, 0.4 * dt); }
       if (done && p.dead > 0) p.dead = Math.min(1, p.dead + 0.04 * dt);
       p.recoil = Math.max(0, p.recoil - 0.1 * dt);
 
@@ -330,7 +370,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         let moved = false;
         const nx = Math.max(30, Math.min(WW - 30, e.x + vx));
         if (!blocked(nx, footOf({ ...e, x: nx }))) { e.x = nx; moved = Math.abs(vx) > 0.05; }
-        const ny = Math.max(H * 0.3, Math.min(H - 50, e.y + vy));
+        const ny = Math.max(60, Math.min(H - 50, e.y + vy));
         if (!blocked(e.x, ny + 28 * depth(ny))) { e.y = ny; moved = moved || Math.abs(vy) > 0.05; }
         if (!moved) {
           // stuck behind an obstacle: walk sideways around it
@@ -340,11 +380,11 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         if (dist <= e.ty && (e.x < camX + 20 || e.x > camX + W - 20)) e.dir = e.x < p.x ? 1 : -1;
         // keep a little gap from each other
         for (const o of alive) if (o !== e) { const ox = e.x - o.x, oy = e.y - o.y, od = Math.hypot(ox, oy); if (od > 0 && od < 40) { e.x += (ox / od) * 0.6 * dt; } }
-        if (done || e.y < H * 0.32 || dist > 640) continue;
+        if (done || dist > 640) continue;
         e.cool -= dt;
-        if (e.cool <= 25 && e.warn === 0 && e.cool > 0) e.warn = 1;
+        if (e.cool <= 18 && e.warn === 0 && e.cool > 0) e.warn = 1;
         if (e.cool <= 0) {
-          e.warn = 0; e.flash = 1; e.cool = Math.max(70, 150 - elapsed * 1.2) + Math.random() * 80;
+          e.warn = 0; e.flash = 1; e.cool = Math.max(40, 95 - elapsed * 1.2) + Math.random() * 45;
           const a = Math.atan2(p.y - 10 - e.y, p.x - e.x);
           fireBullet(e.x + 9 + Math.cos(a) * 32, e.y - 5 + Math.sin(a) * 32, p.x, p.y - 20, true);
         }
@@ -358,8 +398,8 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         if (cv) { burst(b.x, b.y, "#d9c39a", 8, 2.5); return false; }
         if (b.enemy) {
           if (p.shieldT > 0.6 && !done) {
-            const sx = p.x, sy = p.y - 64;
-            if (Math.abs(b.x - sx) < 38 && Math.abs(b.y - sy) < 18) {
+            const sx = p.x + Math.cos(p.shieldA) * 62, sy = p.y - 29 + Math.sin(p.shieldA) * 55;
+            if (Math.hypot(b.x - sx, b.y - sy) < 40) {
               burst(b.x, b.y, COL.shield, 12, 3); haptic("light");
               floats.push({ x: sx, y: sy - 20, text: "BLOCK!", life: 1, color: COL.shield });
               score += 2; return false;
@@ -490,6 +530,19 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
     if (!aimPtr.current) return;
     aimPtr.current = null; input.current.aiming = false; input.current.fire = true; setAimOn(false);
   };
+  // Hold shield and drag: the shield swings to that side (up/down/left/right or anywhere between).
+  const shieldDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const r = e.currentTarget.getBoundingClientRect();
+    shieldPtr.current = { id: e.pointerId, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    shieldSet(true);
+  };
+  const shieldMove = (e: React.PointerEvent) => {
+    const s = shieldPtr.current; if (!s || s.id !== e.pointerId) return;
+    const dx = e.clientX - s.cx, dy = e.clientY - s.cy;
+    if (Math.hypot(dx, dy) > 12) input.current.shieldA = Math.atan2(dy, dx);
+  };
+  const shieldUp = () => { shieldPtr.current = null; shieldSet(false); };
   const shieldSet = (v: boolean) => { input.current.shield = v; setShieldOn(v); if (v) haptic("light"); };
 
   return (
@@ -507,7 +560,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         {countdown > 0 && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/50">
             <div key={countdown} className="font-display text-8xl text-gold-gradient animate-in zoom-in-50 fade-in duration-500">{countdown}</div>
-            <p className="px-6 text-center text-foreground">Move with the left stick — walk left or right to explore. Hold 🛡️ to block. Hold 🎯, drag to aim, release to shoot!</p>
+            <p className="px-6 text-center text-foreground">Move with the left stick — walk left or right to explore. Hold 🛡️ and drag to point the shield any way. Hold 🎯, drag to aim, release to shoot!</p>
             <p className="px-6 text-center font-display text-lg text-primary">Take down 9–12 enemies · +10 coins each</p>
           </div>
         )}
@@ -524,8 +577,8 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         </div>
         {/* shield + shoot */}
         <button
-          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); shieldSet(true); }}
-          onPointerUp={() => shieldSet(false)} onPointerCancel={() => shieldSet(false)}
+          onPointerDown={shieldDown} onPointerMove={shieldMove}
+          onPointerUp={shieldUp} onPointerCancel={shieldUp}
           className={`absolute bottom-36 right-6 flex h-[72px] w-[72px] touch-none items-center justify-center rounded-full border-4 border-hud-blue glow-blue transition-transform ${shieldOn ? "scale-110 bg-hud-blue/70" : "bg-background/50"}`}
           aria-label="Shield"
         >
