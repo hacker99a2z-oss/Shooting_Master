@@ -95,7 +95,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     const rawUserId=url.searchParams.get("userid")||url.searchParams.get("userId")||"";
     if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram reward callback is not configured"},503);
     if(!equal(suppliedKey,env.ADSGRAM_REWARD_SECRET))return json({error:"Unauthorized"},401);
-    if(!/^[1-9]\\d{0,18}$/.test(rawUserId))return json({error:"Invalid Telegram user ID"},400);
+    if(!/^[0-9]{1,19}$/.test(rawUserId))return json({error:"Invalid Telegram user ID"},400);
     const tgId=Number(rawUserId);
     if(!Number.isSafeInteger(tgId))return json({error:"Invalid Telegram user ID"},400);
     const db=dbFor(env);
