@@ -14,7 +14,7 @@ interface Env {
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
+const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=600000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -222,11 +222,31 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         if(Number(p.extra_plays)>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
         if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>Date.now())throw new Error("Next ad unlocks soon — please wait");
-        const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,Date.now()]});
-        if(Number(pending.rows[0]?.total??0)>=1)throw new Error("An ad session is already open");
-        const adSessionId=crypto.randomUUID(),expiresAt=Date.now()+AD_TTL_MS;
-        await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,Date.now(),expiresAt]});
+        const now=Date.now();
+        await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
+        const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,now]});
+        if(Number(pending.rows[0]?.total??0)>=1)throw new Error("A rewarded ad is still awaiting server confirmation. Please try again shortly.");
+        const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
+        await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
         return {adSessionId,expiresAt};
+      });
+      return json(result);
+    }
+    if(path==="/api/ad/cancel"){
+      const id=typeof body.adSessionId==="string"?body.adSessionId.slice(0,64):"";
+      if(!id)return json({error:"Ad session ID is required"},400);
+      const result=await txRun(db,async(tx)=>{
+        const selected=await tx.execute({sql:"SELECT status,expires_at FROM ad_sessions WHERE id=? AND tg_id=?",args:[id,user.id]});
+        const session=selected.rows[0] as Row|undefined;
+        if(!session)throw new Error("Ad session not found");
+        const status=String(session.status);
+        if(status==="rewarded")return {...view((await playerRow(db,user.id,tx))!),verified:true,rewardPending:false,cancelled:false};
+        if(status==="created"||status==="awaiting_postback"){
+          await tx.execute({sql:"UPDATE ad_sessions SET status='cancelled' WHERE id=? AND tg_id=? AND status IN ('created','awaiting_postback')",args:[id,user.id]});
+        }
+        const player=await playerRow(db,user.id,tx);
+        if(!player)throw new Error("Player not found");
+        return {...view(player),verified:false,rewardPending:false,cancelled:true};
       });
       return json(result);
     }
