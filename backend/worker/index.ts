@@ -105,13 +105,9 @@ async function telegramWebhook(request:Request,env:Env){
   const command=typeof message?.text==="string"?message.text.trim():"";
   if(chat?.type!=="private"||!/^\/start(?:@\w+)?(?:\s|$)/i.test(command))return json({ok:true});
   const text=[
-    "🎮 <b>BATTLE ARENA:</b> Defeat 9–12 enemies and earn 10 coins per kill.",
-    "📅 <b>DAILY PLAY:</b> Get one free game every day; watch AdsGram videos for up to 3 extra plays.",
-    "🎁 <b>DAILY BONUS:</b> Play 100 games in one day to claim 1,000–5,000 bonus coins.",
-    "🤝 <b>REFERRALS:</b> Invite friends and earn 100 coins when a friend completes 10 games.",
-    "🏆 <b>LEADERBOARD:</b> Compete in 48-hour seasons; the top 30 share a displayed $10 prize pool.",
-    "💳 <b>WITHDRAWALS:</b> Request payment to a supported EVM or TRON wallet; all requests are manually reviewed.",
-    "🚀 Tap <b>Open App</b> below to start playing!"
+    "🪙 <b>EARN COINS:</b> Defeat enemies to earn 10 coins per kill and collect bonus rewards.",
+    "💵 <b>DOLLAR BALANCE:</b> Your coins convert to dollars automatically — 100,000 coins = $1.",
+    "💸 <b>WITHDRAW:</b> Submit a withdrawal request from $0.02; requests are sent automatically for manual review before payment."
   ].join("\n");
   const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
