@@ -138,10 +138,11 @@ function Refer() {
             <p className="text-xs text-muted-foreground">Friends joined</p>
           </div>
           <div className="rounded-2xl bg-muted p-3">
-            <p className="font-display text-3xl text-gold-gradient">{((me?.referralCount ?? 0) * REFERRAL_REWARD).toLocaleString()}</p>
+            <p className="font-display text-3xl text-gold-gradient">{((me?.referralPaidCount ?? 0) * REFERRAL_REWARD).toLocaleString()}</p>
             <p className="text-xs text-muted-foreground">Coins earned</p>
           </div>
         </div>
+        <p className="mt-3 text-xs text-muted-foreground">Friends count as soon as they join using your link. Your +${REFERRAL_REWARD} coin reward unlocks after each friend completes ${REFERRAL_GAMES_NEEDED} games.</p>
       </section>
     </AppShell>
   );
