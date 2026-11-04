@@ -112,7 +112,7 @@ async function telegramWebhook(request:Request,env:Env){
     "🏆 <b>LEADERBOARD:</b> Compete in 48-hour seasons; the top 30 share a displayed $10 prize pool.",
     "💳 <b>WITHDRAWALS:</b> Request payment to a supported EVM or TRON wallet; all requests are manually reviewed.",
     "🚀 Tap <b>Open App</b> below to start playing!"
-
+  ].join("\n");
   const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
   ];
