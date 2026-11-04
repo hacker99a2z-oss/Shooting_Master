@@ -2,20 +2,16 @@ name = "shooting-master-api"
 main = "index.ts"
 compatibility_date = "2026-11-01"
 workers_dev = true
-
 [vars]
 APP_ORIGIN = "https://shooting-master.pages.dev"
-
 [[queues.producers]]
 binding = "PAYOUT_QUEUE"
 queue = "shooting-master-payouts"
-
 [[queues.consumers]]
 queue = "shooting-master-payouts"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 5
 dead_letter_queue = "shooting-master-payouts-dlq"
-
 [triggers]
 crons = ["*/5 * * * *"]

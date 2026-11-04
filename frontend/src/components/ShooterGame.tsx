@@ -2,7 +2,7 @@ import arenaBg from "@/assets/arena-bg.jpg";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Shield } from "lucide-react";
 import { haptic } from "@/lib/tg";
-import { COINS_PER_KILL, randomEnemyTotal, wavePlan } from "@/lib/rules";
+import { COINS_PER_KILL, wavePlan } from "@/lib/rules";
 
 // Arena shooter: enemies come from the front (top), max 3-4 at once.
 // Left joystick moves the hero. Hold SHIELD to raise the shield in front.
@@ -48,7 +48,7 @@ function randomCovers(WW: number, H: number, heroX: number, heroY: number): Cove
   return out;
 }
 
-export function ShooterGame({ onEnd }: { onEnd: (score: number, kills: number) => void }) {
+export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kills: number) => void; enemyTotal: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const endRef = useRef(onEnd);
@@ -92,7 +92,7 @@ export function ShooterGame({ onEnd }: { onEnd: (score: number, kills: number) =
     let enemies: Enemy[] = [], bullets: Bullet[] = [], parts: Part[] = [], floats: Float[] = [];
     let score = 0, kills = 0, shake = 0, spawnCd = 30, done = false, lastHud = 0, raf = 0;
     // This match: random 9–12 enemies, sent in waves 1, 1, 2, 3, 4…; next wave comes once the last is cleared.
-    const total = randomEnemyTotal();
+    const total = enemyTotal;
     const waves = wavePlan(total);
     let waveIdx = 0, waveQueue = 0;
     const covers = randomCovers(WW, H, p.x, p.y);

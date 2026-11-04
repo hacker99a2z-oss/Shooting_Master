@@ -1,0 +1,94 @@
+name: Deploy Shooting Master
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shooting-master-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TURSO_DATABASE_URL: \${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: \${{ secrets.TURSO_AUTH_TOKEN }}
+      TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check deployment secrets
+        shell: bash
+        run: |
+          for key in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID TURSO_DATABASE_URL TURSO_AUTH_TOKEN TELEGRAM_BOT_TOKEN; do
+            if [ -z "\${!key}" ]; then
+              echo "::error::Missing GitHub Actions secret: $key"
+              exit 1
+            fi
+          done
+      - name: Install backend tools
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - name: Ensure payout queues exist
+        working-directory: backend
+        shell: bash
+        run: |
+          QUEUES="$(npx wrangler queues list --config worker/wrangler.toml)"
+          if ! printf '%s' "$QUEUES" | grep -Fq 'shooting-master-payouts-dlq'; then
+            npx wrangler queues create shooting-master-payouts-dlq --config worker/wrangler.toml
+          fi
+          if ! printf '%s' "$QUEUES" | grep -Fq 'shooting-master-payouts'; then
+            npx wrangler queues create shooting-master-payouts --config worker/wrangler.toml
+          fi
+      - name: Set Worker secrets
+        working-directory: backend
+        shell: bash
+        run: |
+          printf '%s' "$TURSO_DATABASE_URL" | npx wrangler secret put TURSO_DATABASE_URL --config worker/wrangler.toml
+          printf '%s' "$TURSO_AUTH_TOKEN" | npx wrangler secret put TURSO_AUTH_TOKEN --config worker/wrangler.toml
+          printf '%s' "$TELEGRAM_BOT_TOKEN" | npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
+      - name: Apply Turso schema
+        working-directory: backend
+        run: npm run db:migrate
+      - name: Deploy API Worker
+        id: worker
+        working-directory: backend
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy --config worker/wrangler.toml 2>&1 | tee deploy.log
+          WORKER_URL="$(grep -Eo 'https://shooting-master-api\.[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)"
+          if [ -z "$WORKER_URL" ]; then
+            echo "::error::Could not read the Worker URL from Wrangler output."
+            exit 1
+          fi
+          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Build Pages frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: \${{ steps.worker.outputs.url }}
+          VITE_TELEGRAM_BOT_USERNAME: \${{ vars.VITE_TELEGRAM_BOT_USERNAME }}
+          VITE_ADSGRAM_BLOCK_ID: \${{ vars.VITE_ADSGRAM_BLOCK_ID }}
+          VITE_SUPPORT_URL: \${{ vars.VITE_SUPPORT_URL }}
+          VITE_PROOF_URL: \${{ vars.VITE_PROOF_URL }}
+        run: npm run build
+      - name: Ensure Pages project exists
+        working-directory: backend
+        shell: bash
+        run: |
+          PROJECTS="$(npx wrangler pages project list)"
+          if ! printf '%s' "$PROJECTS" | grep -Fq 'shooting-master'; then
+            npx wrangler pages project create shooting-master --production-branch main
+          fi
+      - name: Deploy Pages
+        working-directory: backend
+        run: npx wrangler pages deploy ../frontend/dist --project-name shooting-master --branch main --commit-hash "$GITHUB_SHA" --commit-message "Deploy $GITHUB_SHA"

@@ -1,25 +1,40 @@
-# Remix of Telegram Coin Quest
+# Shooting Master
 
-amake ekta @connector:telegram:"Telegram" mini app baniye diba jar frontend hobe vercel a are backend hobe render a refer page thakbe home page thakbe leaderboard thakbe then withdraw page thakbe 
-home page a ekta button thakbe Play (Daily play 1 times ) etay click korar por tumi tumr nijer moto ekta animated game baniye deo tumr idea moto are game ta ses hole 100 coins pabe are ekbar khela ses houar por play button tar akhane dekhabe watch ad to play more are ei ads gula hobe adsgram er ads egula adsgram er offcial site theke dekhe kivabe ads er code bosabe hobe dekhe then korba are type hobe reward ads are leader board je akhane pothom 30 jon price pabe are 10 $ ei 30 joner moddhe vag hobe but show hobe 50 jon user baki 20 emnei show hobe tader kichu deoa hobe na are 10 $ je 30 joner moddhe share hobe tader ekjon theke onno joner prize er moddhe beshi distance hobe na are etah 2 din por por reset hobe are user der coins 500 houar por leaderboard er akhane show hobe are etah leaderboard page a mention o thakbe are withdraw page a $ are coins 2 tai show hobe are 1 $ er jonno 100000 coins kata hobe are ei unupate hisab hobe are withdraw page a payments proof are contact support er button o thakbe then history o thakbe egula idea thik rekhe app ta k khub shundor are khub shundor design soho are khub shundor ekta animated game baniye deo jeno user ra khub mojao pay abr earn o korte pare are bar bar khelar jonno interest o thake
+Telegram Mini App. The only application folders at repository root are:
 
-This project was built with [Lovable](https://lovable.dev).
+- frontend/ — React/Vite UI, animated shooter game, pages and static assets; deployed to Cloudflare Pages.
+- backend/ — Cloudflare Worker API, Turso schema/migrations and operational scripts; deployed to Cloudflare Workers.
 
-## Build with Lovable
+## Deployment
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/85aacae6-a3a1-4d17-aa01-71a59fa35711).
+A push to main runs .github/workflows/deploy.yml. The workflow installs app dependencies, creates payout queues if missing, applies the Turso schema, deploys the Worker, builds the frontend with the Worker API URL, and publishes Pages.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+Add these GitHub Actions repository secrets:
 
-## Development
+- CLOUDFLARE_API_TOKEN — account token with Cloudflare Pages Edit, Workers Scripts Edit and Queues Edit.
+- CLOUDFLARE_ACCOUNT_ID
+- TURSO_DATABASE_URL
+- TURSO_AUTH_TOKEN
+- TELEGRAM_BOT_TOKEN
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Optional GitHub Actions variables: VITE_TELEGRAM_BOT_USERNAME, VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL.
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
-```
+The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev.
+
+## One-time Supabase data import
+
+Schema deployment does not automatically import old Supabase records. To preserve existing balances and withdrawal history, add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as temporary Actions secrets, then manually run the Import legacy Supabase data workflow from the Actions tab. It imports player and withdrawal rows. Verify record counts before switching all traffic, then remove the legacy secrets. Do not rerun after Turso becomes the source of truth.
+
+## Local development
+
+Frontend: cd frontend, npm install, npm run dev.
+Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill local-only values, then npm run db:migrate and npm run dev.
+
+## Operational and security limits
+
+- Withdrawal requests atomically reserve coins and enter a Cloudflare Queue for manual review. No payout provider or signing key is configured, so this project does not automatically transfer funds or mark them paid.
+- AdsGram rewards currently rely on the browser SDK completion callback plus a one-time API session. This is not a signed server-to-server ad receipt and is not fully fraud-proof.
+- The canvas game is client-rendered. Server-issued one-time sessions, enemy limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
+- The leaderboard shows up to 50 players with at least 500 season coins; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
+- 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
+- Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.

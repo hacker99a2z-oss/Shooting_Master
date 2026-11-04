@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { BadgeCheck, Headphones, History, Wallet } from "lucide-react";
@@ -27,9 +26,7 @@ export const Route = createFileRoute("/withdraw")({
 function Withdraw() {
   const { data: me, refetch } = usePlayer();
   const qc = useQueryClient();
-  const histFn = useServerFn(getWithdrawals);
-  const reqFn = useServerFn(requestWithdraw);
-  const { data: history } = useQuery({ queryKey: ["withdrawals"], queryFn: () => histFn({ data: auth() }) });
+  const { data: history } = useQuery({ queryKey: ["withdrawals"], queryFn: () => getWithdrawals(auth()) });
   const [usd, setUsd] = useState(String(MIN_WITHDRAW_USD));
   const [wallet, setWallet] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,7 +38,7 @@ function Withdraw() {
   const submit = async () => {
     setBusy(true);
     try {
-      await reqFn({ data: { ...auth(), usd: Number(usd), wallet } });
+      await requestWithdraw({ ...auth(), usd: Number(usd), wallet });
       haptic("success");
       toast.success("Withdraw request sent!");
       setWallet("");
