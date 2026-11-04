@@ -56,17 +56,23 @@ function Withdraw() {
       <section className="relative overflow-hidden rounded-3xl border border-primary/30 bg-card p-5 shadow-card">
         <div className="pointer-events-none absolute -right-10 -top-14 h-44 w-44 rounded-full bg-gold opacity-25 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-14 -left-10 h-40 w-40 rounded-full bg-coral opacity-20 blur-3xl" />
-        <div className="relative flex items-start justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Balance</p>
-            <p className="font-display text-5xl text-success">${balanceUsd.toFixed(2)}</p>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-              <span className="inline-block h-4 w-4 rounded-full bg-gold shadow-glow" />
-              <span className="font-display text-lg text-gold-gradient">{coins.toLocaleString()}</span> coins
-            </p>
+        <div className="relative flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Balance</p>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gold shadow-glow">
+            <Wallet className="h-6 w-6 text-primary-foreground" />
           </div>
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gold shadow-glow">
-            <Wallet className="h-7 w-7 text-primary-foreground" />
+        </div>
+        <div className="relative mt-3 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border bg-muted p-3">
+            <p className="text-xs text-muted-foreground">Dollars</p>
+            <p className="font-display text-3xl text-success">${balanceUsd.toFixed(2)}</p>
+          </div>
+          <div className="rounded-2xl border bg-muted p-3">
+            <p className="text-xs text-muted-foreground">Coins</p>
+            <p className="flex items-center gap-1.5">
+              <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-gold shadow-glow" />
+              <span className="truncate font-display text-3xl text-gold-gradient">{coins.toLocaleString()}</span>
+            </p>
           </div>
         </div>
         <div className="relative mt-4 h-2 overflow-hidden rounded-full bg-muted">
@@ -87,7 +93,13 @@ function Withdraw() {
             className="mt-1 w-full rounded-xl border bg-input px-3 py-3 text-base text-foreground outline-none focus:ring-2 focus:ring-ring"
           />
         </label>
-        <p className="text-xs text-muted-foreground">Costs {needCoins.toLocaleString()} coins</p>
+        <div className="flex items-center justify-between rounded-xl border bg-muted px-3 py-2">
+          <span className="text-xs text-muted-foreground">Coins needed</span>
+          <span className={`flex items-center gap-1.5 font-display text-lg ${needCoins > coins ? "text-destructive" : "text-gold-gradient"}`}>
+            <span className="inline-block h-4 w-4 rounded-full bg-gold" />
+            {needCoins.toLocaleString()}
+          </span>
+        </div>
         <label className="block text-xs text-muted-foreground">
           Trust Wallet address (USDT)
           <input
