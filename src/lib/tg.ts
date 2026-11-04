@@ -18,16 +18,7 @@ export function webApp() {
 export function auth() {
   const wa = webApp();
   const initData: string = wa?.initData || "";
-  let guestId: number | undefined;
-  if (!initData && typeof window !== "undefined") {
-    let g = Number(localStorage.getItem("guest_id"));
-    if (!g) {
-      g = Math.floor(1e9 + Math.random() * 1e9);
-      localStorage.setItem("guest_id", String(g));
-    }
-    guestId = g;
-  }
-  return { initData, guestId };
+  return { initData };
 }
 
 export function startParam(): string {
