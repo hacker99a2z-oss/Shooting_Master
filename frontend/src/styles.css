@@ -122,3 +122,21 @@
 @utility animate-shine { animation: shine 2.6s ease-in-out infinite; }
 
 @keyframes aurora { 0% { background-position: 0% 0% } 100% { background-position: 100% 100% } }
+
+
+/* Explicit color fallbacks for Telegram Android WebView and older embedded browsers. */
+.bg-background { background-color: var(--background); }
+.bg-card { color: var(--card-foreground); background-color: var(--card); }
+.bg-muted { background-color: var(--muted); }
+.bg-secondary { background-color: var(--secondary); }
+.bg-input { background-color: var(--input); }
+.text-foreground { color: var(--foreground); }
+.text-card-foreground { color: var(--card-foreground); }
+.text-muted-foreground { color: var(--muted-foreground); }
+.text-primary { color: var(--primary); }
+.text-primary-foreground { color: var(--primary-foreground); }
+.text-secondary-foreground { color: var(--secondary-foreground); }
+.text-accent-foreground { color: var(--accent-foreground); }
+.text-destructive { color: var(--destructive); }
+.text-destructive-foreground { color: var(--destructive-foreground); }
+.text-success { color: var(--success); }
