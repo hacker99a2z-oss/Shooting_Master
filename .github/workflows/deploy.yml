@@ -58,6 +58,8 @@ jobs:
           OFFICIAL_GROUP_URL: ${{ vars.OFFICIAL_GROUP_URL }}
         run: |
           set -o pipefail
+          OFFICIAL_CHANNEL_URL="${OFFICIAL_CHANNEL_URL:-https://t.me/}"
+          OFFICIAL_GROUP_URL="${OFFICIAL_GROUP_URL:-https://t.me/}"
           npx wrangler deploy --config worker/wrangler.toml --var "OFFICIAL_CHANNEL_URL:${OFFICIAL_CHANNEL_URL}" --var "OFFICIAL_GROUP_URL:${OFFICIAL_GROUP_URL}" 2>&1 | tee deploy.log
           WORKER_URL="$(grep -Eo 'https://shooting-master-api\.[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)"
           if [ -z "$WORKER_URL" ]; then
