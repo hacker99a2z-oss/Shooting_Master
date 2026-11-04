@@ -58,17 +58,13 @@ jobs:
           OFFICIAL_GROUP_URL: ${{ vars.OFFICIAL_GROUP_URL }}
         run: |
           set -o pipefail
-          WRANGLER_VARS=()
-          if [ -n "${OFFICIAL_CHANNEL_URL//[[:space:]]/}" ]; then
-            WRANGLER_VARS+=(--var "OFFICIAL_CHANNEL_URL:${OFFICIAL_CHANNEL_URL}")
-          else
-            echo "::warning::OFFICIAL_CHANNEL_URL is missing. Add it in Settings → Secrets and variables → Actions → Variables to show the Official Channel button."
-          fi
-          if [ -n "${OFFICIAL_GROUP_URL//[[:space:]]/}" ]; then
-            WRANGLER_VARS+=(--var "OFFICIAL_GROUP_URL:${OFFICIAL_GROUP_URL}")
-          else
-            echo "::warning::OFFICIAL_GROUP_URL is missing. Add it in Settings → Secrets and variables → Actions → Variables to show the Official Group button."
-          fi
+          # Use the configured repository variables when present; otherwise use the official links supplied for this bot.
+          OFFICIAL_CHANNEL_URL="${OFFICIAL_CHANNEL_URL:-https://t.me/shooting_master}"
+          OFFICIAL_GROUP_URL="${OFFICIAL_GROUP_URL:-https://t.me/shooting_master_group}"
+          WRANGLER_VARS=(
+            --var "OFFICIAL_CHANNEL_URL:${OFFICIAL_CHANNEL_URL}"
+            --var "OFFICIAL_GROUP_URL:${OFFICIAL_GROUP_URL}"
+          )
           npx wrangler deploy --config worker/wrangler.toml "${WRANGLER_VARS[@]}" 2>&1 | tee deploy.log
           WORKER_URL="$(grep -Eo 'https://shooting-master-api\.[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)"
           if [ -z "$WORKER_URL" ]; then
