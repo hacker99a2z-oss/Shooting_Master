@@ -93,3 +93,13 @@ jobs:
       - name: Deploy Pages
         working-directory: backend
         run: npx wrangler pages deploy ../frontend/dist --project-name shooting-master --branch main --commit-hash "$GITHUB_SHA" --commit-message "Deploy $GITHUB_SHA"
+      - name: Smoke-test Worker API
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+        shell: bash
+        run: |
+          BODY="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$WORKER_URL/health")"
+          printf '%s' "$BODY" | grep -Fq '"ok":true'
+          curl --fail --silent --show-error -I -H "Origin: https://shooting-master.pages.dev" "$WORKER_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
+      - name: Smoke-test Pages homepage
+        run: curl --fail --silent --show-error --retry 8 --retry-delay 3 https://shooting-master.pages.dev/ -o /dev/null
