@@ -115,6 +115,16 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Validate AdsGram Block ID
+        env:
+          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
+        shell: bash
+        run: |
+          if [ -z "${VITE_ADSGRAM_BLOCK_ID//[[:space:]]/}" ]; then
+            echo "::error::Missing GitHub Actions repository variable VITE_ADSGRAM_BLOCK_ID. Add it under Settings → Secrets and variables → Actions → Variables, then rerun deployment."
+            exit 1
+          fi
+          echo "AdsGram Block ID is configured."
       - name: Build Pages frontend
         working-directory: frontend
         env:
