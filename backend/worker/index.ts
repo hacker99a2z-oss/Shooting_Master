@@ -95,7 +95,8 @@ function telegramLink(value?:string){
 async function telegramWebhook(request:Request,env:Env){
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
   const received=request.headers.get("X-Telegram-Bot-Api-Secret-Token")||"";
-  if(!env.TELEGRAM_WEBHOOK_SECRET||!equal(received,env.TELEGRAM_WEBHOOK_SECRET))return json({error:"Unauthorized"},401);
+  const expected=hex(await hmac(bytes(env.TELEGRAM_BOT_TOKEN),"shooting-master-telegram-webhook-v1"));
+  if(!equal(received,expected))return json({error:"Unauthorized"},401);
   let update:Row;
   try{update=await request.json() as Row;}catch{return json({error:"Invalid update"},400);}
   const message=update.message as Row|undefined;
