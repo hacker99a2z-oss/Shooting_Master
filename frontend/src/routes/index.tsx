@@ -5,7 +5,7 @@ import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target
 import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, finishGame, startAdPlay, grantAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startGame, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import arenaBg from "@/assets/arena-bg.jpg";
@@ -67,10 +67,26 @@ function Home() {
       const adSession = await startAdPlay(auth());
       const ok = await showRewardAd();
       if (!ok) throw new Error("Watch the full ad to unlock a game");
-      const p = await grantAdPlay({ ...auth(), adSessionId: adSession.adSessionId });
-      setPlayer(p);
-      haptic("success");
-      toast.success("Extra game unlocked!");
+      const initial = await grantAdPlay({ ...auth(), adSessionId: adSession.adSessionId });
+      if (initial.verified) {
+        setPlayer(initial);
+        haptic("success");
+        toast.success("Extra game unlocked!");
+        return;
+      }
+      setPlayer(initial);
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        const status = await getAdPlayStatus({ ...auth(), adSessionId: adSession.adSessionId });
+        if (status.verified) {
+          setPlayer(status);
+          haptic("success");
+          toast.success("Server verified the ad. Extra game unlocked!");
+          return;
+        }
+        if (status.expired) break;
+      }
+      toast.info("Ad watched. Server confirmation is still pending; your reward will appear once AdsGram confirms it.");
     } catch (e: any) {
       toast.error(e?.description || e?.message || "Ad not available right now");
     } finally {
