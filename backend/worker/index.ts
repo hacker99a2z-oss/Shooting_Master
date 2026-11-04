@@ -73,7 +73,9 @@ async function ensurePlayer(db:any,user:AuthUser,startParam=""){
   if(m&&Number(m[1])!==user.id&&Number.isSafeInteger(Number(m[1])))referrer=Number(m[1]);
   await db.execute({sql:"INSERT OR IGNORE INTO players (tg_id,first_name,username,photo_url,referred_by,coins,season_coins,season_id,games_played,best_score,daily_games,extra_plays,referral_count,referral_paid,created_at) VALUES (?,?,?,?,?,0,0,?,0,0,0,0,0,0,?)",
     args:[user.id,user.firstName,user.username,user.photoUrl,referrer,seasonId(),new Date().toISOString()]});
-  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 AND games_played=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
+  // Apply the first valid referral link to an account that has not already been attributed.
+  // Never overwrite an existing referrer or attach a self-referral.
+  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
   const row=await playerRow(db,user.id);if(!row)throw new Error("Could not create player");return row;
 }
 async function txRun(db:any,fn:(tx:any)=>Promise<any>){
