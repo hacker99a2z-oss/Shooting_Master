@@ -89,7 +89,8 @@ function prize(rank:number){
 function randomBonus(){return BONUS_MIN_COINS+Math.floor(Math.random()*((BONUS_MAX_COINS-BONUS_MIN_COINS)/100+1))*100;}
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
 
-function telegramLink(value?:string){
+type StartKeyboardButton={text:string;url?:string;web_app?:{url:string}};
+function telegramLink(value?:string):value is string{
   return typeof value==="string"&&/^https:\/\/t\.me\/[A-Za-z0-9_+.-]+(?:\?[A-Za-z0-9_=&%-]+)?$/.test(value);
 }
 async function telegramWebhook(request:Request,env:Env){
@@ -130,7 +131,7 @@ async function telegramWebhook(request:Request,env:Env){
     "",
     "🚀 Tap <b>Open App</b> below to start playing!"
   ].join("\n");
-  const keyboard:Row[]=[
+  const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
   ];
   if(telegramLink(env.OFFICIAL_CHANNEL_URL))keyboard.push([{text:"📢 Official Channel",url:env.OFFICIAL_CHANNEL_URL}]);
