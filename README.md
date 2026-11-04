@@ -17,7 +17,7 @@ Add these GitHub Actions repository secrets:
 - TURSO_AUTH_TOKEN
 - TELEGRAM_BOT_TOKEN
 
-Optional GitHub Actions variables: VITE_TELEGRAM_BOT_USERNAME, VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL.
+Optional GitHub Actions variables: VITE_TELEGRAM_BOT_USERNAME, VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL, OFFICIAL_CHANNEL_URL, OFFICIAL_GROUP_URL. The last two add the matching buttons to the Telegram /start welcome message.
 
 The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev.
 
@@ -33,7 +33,7 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 ## Operational and security limits
 
 - Withdrawal requests atomically reserve coins and enter a Cloudflare Queue for manual review. No payout provider or signing key is configured, so this project does not automatically transfer funds or mark them paid.
-- AdsGram rewards currently rely on the browser SDK completion callback plus a one-time API session. This is not a signed server-to-server ad receipt and is not fully fraud-proof.
+- AdsGram rewards are credited only after the protected server-to-server Reward URL callback consumes a pending one-time session. AdsGram's documented callback has no signature or unique event ID, so the shared-secret URL is not a cryptographically signed receipt.
 - The canvas game is client-rendered. Server-issued one-time sessions, enemy limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
 - The leaderboard shows up to 50 players with at least 500 season coins; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
 - 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
@@ -49,3 +49,8 @@ Configure the AdsGram Reward URL as:
 `https://shooting-master-api.hacker99a2z.workers.dev/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
 
 Replace `YOUR_SHARED_SECRET` with the exact Worker Secret value. The client completion event only leaves a one-time ad session pending; the Worker grants the extra play only after this protected server callback. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so this shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
+
+
+## Telegram bot /start message
+
+The deployment registers the Worker as the Telegram bot webhook. A private-chat `/start` command sends an English feature summary and an inline keyboard with an **Open App** Web App button. Set the optional repository Actions variables `OFFICIAL_CHANNEL_URL` and `OFFICIAL_GROUP_URL` to valid public Telegram links (for example, `https://t.me/yourchannel` or a `https://t.me/+invitecode` link) to show the 📢 Official Channel and 👥 Official Group buttons. If either variable is blank, that button is omitted. The webhook secret is derived from the bot token and is not stored as a separate plaintext variable.
