@@ -81,21 +81,33 @@
   * { border-color: var(--color-border); }
   html { background: var(--background); color-scheme: dark; }
   body {
+    position: relative;
+    isolation: isolate;
     color: var(--foreground);
     font-family: var(--font-sans);
-    background: transparent;
+    background-color: var(--background);
+    background-image: none;
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Fixed colourful layer: works in Telegram WebView where background-attachment: fixed is broken. */
+  /* Keep the animated gradient above the WebView canvas but below the app content. */
   body::before {
     content: "";
     position: fixed;
-    inset: -20%;
-    z-index: -1;
+    inset: 0;
+    z-index: 0;
     pointer-events: none;
+    background-color: var(--background);
     background-image: var(--gradient-sky);
+    background-repeat: no-repeat;
+    background-size: cover;
     animation: aurora-move 20s ease-in-out infinite alternate;
+  }
+  #root {
+    position: relative;
+    z-index: 1;
+    min-height: 100dvh;
+    background: transparent;
   }
   h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0.02em; }
   h1 { color: var(--foreground); background-image: none; }
