@@ -53,9 +53,12 @@ jobs:
         id: worker
         working-directory: backend
         shell: bash
+        env:
+          OFFICIAL_CHANNEL_URL: ${{ vars.OFFICIAL_CHANNEL_URL }}
+          OFFICIAL_GROUP_URL: ${{ vars.OFFICIAL_GROUP_URL }}
         run: |
           set -o pipefail
-          npx wrangler deploy --config worker/wrangler.toml 2>&1 | tee deploy.log
+          npx wrangler deploy --config worker/wrangler.toml --var "OFFICIAL_CHANNEL_URL:${OFFICIAL_CHANNEL_URL}" --var "OFFICIAL_GROUP_URL:${OFFICIAL_GROUP_URL}" 2>&1 | tee deploy.log
           WORKER_URL="$(grep -Eo 'https://shooting-master-api\.[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)"
           if [ -z "$WORKER_URL" ]; then
             echo "::error::Could not read the Worker URL from Wrangler output."
@@ -70,6 +73,34 @@ jobs:
           printf '%s' "$TURSO_DATABASE_URL" | npx wrangler secret put TURSO_DATABASE_URL --config worker/wrangler.toml
           printf '%s' "$TURSO_AUTH_TOKEN" | npx wrangler secret put TURSO_AUTH_TOKEN --config worker/wrangler.toml
           printf '%s' "$TELEGRAM_BOT_TOKEN" | npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
+      - name: Register Telegram bot webhook
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.url }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHmac } from "node:crypto";
+          const token = process.env.TELEGRAM_BOT_TOKEN;
+          const workerUrl = process.env.WORKER_URL;
+          if (!token || !workerUrl) throw new Error("Missing Telegram webhook configuration");
+          const secret = createHmac("sha256", token).update("shooting-master-telegram-webhook-v1").digest("hex");
+          const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              url: `${workerUrl}/telegram/webhook`,
+              secret_token: secret,
+              allowed_updates: ["message"],
+              drop_pending_updates: false
+            })
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) {
+            console.error("Telegram webhook registration failed:", result.description || response.status);
+            process.exit(1);
+          }
+          console.log("Telegram /start webhook registered.");
+          NODE
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --no-audit --no-fund
