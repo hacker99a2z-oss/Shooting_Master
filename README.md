@@ -21,6 +21,38 @@ Optional GitHub Actions variables: VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE
 
 The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev.
 
+
+## Automatic USDT BEP-20 payouts
+
+Automatic payouts are **off by default**. To enable them, first create a dedicated BNB Smart Chain treasury wallet used only by this Worker. Fund it with the supported BSC USDT token and enough BNB for gas. Do not use a personal wallet or reuse its key elsewhere.
+
+Add these encrypted GitHub Actions repository secrets under Settings → Secrets and variables → Actions → Secrets:
+
+- `PAYOUT_PRIVATE_KEY` — the dedicated treasury wallet's 32-byte EVM private key in `0x...` format. Never commit it, paste it into Lovable/frontend code, or send it in chat.
+- `BSC_RPC_URL` — an HTTPS BNB Smart Chain mainnet RPC endpoint from a provider you trust. Do not use an endpoint that asks for your wallet private key.
+
+Then add the GitHub Actions repository variable under Settings → Secrets and variables → Actions → Variables:
+
+- `PAYOUT_ENABLED` = `true`
+
+A push to `main` will place the signing key and RPC endpoint into Cloudflare Worker encrypted Secrets. The key is read only by the backend Worker; it is never sent to the browser or stored in Turso. With the variable unset or set to anything other than `true`, withdrawals remain in manual review and no automatic transfer is signed.
+
+### Payout safety controls
+
+- The Worker fixes the token contract in backend code to `0x55d398326f99059fF775485246999027B3197955` on BNB Smart Chain chain ID 56 and verifies the contract symbol and 18 decimals before signing.
+- Each automatic payout is capped at $10 USDT-equivalent, and automatic payouts are capped at $100 in a UTC day. Requests outside those limits stay in manual review.
+- The treasury must have enough token balance and at least twice the estimated BNB transaction fee. Automatic signing is paused when estimated gas exceeds 20 gwei or 150,000 gas.
+- The Worker signs the transfer server-side, persists the signed transaction and hash before broadcasting, and reuses that same signed transaction on retries. This is intended to prevent duplicate sends after queue retries or Worker restarts.
+- A withdrawal is marked paid only after the receipt succeeds and the expected token Transfer event matches the treasury, recipient and exact amount. Reverts, balance problems, unexpected token metadata, or unverifiable receipts are sent to manual review.
+- The queue has one consumer at a time because the treasury uses sequential account nonces. Do not send unrelated transactions from the payout treasury while this automation is active.
+- Check the Cloudflare Queue dead-letter queue and Turso `withdrawals` / `payout_events` records when a payout needs manual intervention. Never manually mark a withdrawal paid without verifying the transaction on BscScan.
+
+### Important BNB Chain token identity note
+
+The configured BNB Chain token contract is the widely used BEP-20 token labelled USDT on BNB Chain and has 18 decimals. It is **not the Ethereum 6-decimal USDT contract**. Tether's current supported-protocol page does not list BNB Smart Chain as a native USD₮ network, so confirm that your exchange and recipients accept this specific BNB Chain token representation before enabling payouts. The contract address—not the token name shown in a wallet—is the asset identifier.
+
+Keep a reserve for gas, monitor treasury balances and queue failures, and start with a small test payout to a wallet you control before raising limits. The code change alone does not fund the treasury or activate automatic payouts; activation requires the secrets and variable above.
+
 ## One-time Supabase data import
 
 Schema deployment does not automatically import old Supabase records. To preserve existing balances and withdrawal history, add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as temporary Actions secrets, then manually run the Import legacy Supabase data workflow from the Actions tab. It imports player and withdrawal rows. Verify record counts before switching all traffic, then remove the legacy secrets. Do not rerun after Turso becomes the source of truth.
