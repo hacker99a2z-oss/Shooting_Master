@@ -160,20 +160,20 @@ function Home() {
             ) : canPlay ? (
               <button
                 onClick={beginGame}
-                disabled={busy || !!pendingAd}
+                disabled={busy}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform"
               >
                 <Play className="h-6 w-6 fill-current" />
-                {pendingAd ? "Verifying ad…" : me!.canPlayFree ? "Play (Daily 1 Time)" : `Play (${me!.extraPlays} left)`}
+                {me!.canPlayFree ? "Play (Daily 1 Time)" : `Play (${me!.extraPlays} left)}`}
               </button>
             ) : (
               <button
-                disabled={busy || !!pendingAd || waitSec > 0}
+                disabled={busy || waitSec > 0}
                 onClick={watchAd}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-coral py-4 font-display text-xl text-accent-foreground shadow-card active:scale-95 transition-transform disabled:opacity-70"
               >
                 {waitSec > 0 ? <Timer className="h-6 w-6" /> : <Tv className="h-6 w-6" />}
-                {pendingAd ? "Verifying completed ad…" : waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Loading ad…" : "Watch ads to play more"}
+                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Loading ad…" : "Watch ads to play more"}
               </button>
             )}
           </div>
