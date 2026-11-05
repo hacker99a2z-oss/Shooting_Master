@@ -71,7 +71,10 @@ function Home() {
     let adSessionId = "";
     let adCompleted = false;
     const launchAdGame = async () => {
+      if (!adSessionId) throw new Error("The ad session was not created. Please request a new ad.");
+      console.info("[AdsGram] requesting game start after completed ad");
       const game = await startGameAfterAd({ ...auth(), adSessionId });
+      console.info("[AdsGram] game start accepted", { gameId: game.gameId, enemyTotal: game.enemyTotal });
       adLaunchRef.current = true;
       setGameId(game.gameId);
       setEnemyTotal(game.enemyTotal);
@@ -102,10 +105,16 @@ function Home() {
         return;
       }
       adCompleted = true;
+      console.info("[AdsGram] reward ad completed", { state: adResult.state || "unknown" });
       // On Reward blocks, show() only resolves after a full watch. Do not wait for Reward URL.
       // The Worker holds the resulting coins until the separate server callback confirms the ad.
       await launchAdGame();
     } catch (e: any) {
+      console.error("[AdsGram] watch-to-game flow failed", {
+        adCompleted,
+        hasAdSession: Boolean(adSessionId),
+        message: e?.message || String(e),
+      });
       if (adSessionId && !adCompleted) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
@@ -114,7 +123,7 @@ function Home() {
         }
       }
       toast.error(adCompleted
-        ? "The ad finished, but the game could not start. Please refresh and try again."
+        ? `Ad completed, but game start failed: ${e?.message || "Unknown server error"}. Tap Play again or reopen the app.`
         : (e?.description || e?.message || "Ad could not be loaded. Please tap again to retry."));
     } finally {
       setBusy(false);
