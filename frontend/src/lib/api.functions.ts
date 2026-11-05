@@ -9,7 +9,8 @@ async function post<T>(path:string,data:Record<string,unknown>):Promise<T>{
 }
 export const getMe=(data:Auth)=>post<Player>("me",data);
 export const startGame=(data:Auth)=>post<{gameId:string;enemyTotal:number;expiresAt:number}>("game/start",data);
-export const finishGame=(data:Auth & {gameId:string;score:number;kills:number})=>post<Player & {reward:number}>("game/finish",data);
+export const startGameAfterAd=(data:Auth & {adSessionId:string})=>post<{gameId:string;enemyTotal:number;expiresAt:number}>("game/start-ad",data);
+export const finishGame=(data:Auth & {gameId:string;score:number;kills:number})=>post<Player & {reward:number;pendingVerification?:boolean}>("game/finish",data);
 export const startAdPlay=(data:Auth)=>post<{adSessionId:string;expiresAt:number}>("ad/start",data);
 export type AdPlayStatus = Player & {verified:boolean; rewardPending:boolean; expired?:boolean};
 export const grantAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/complete",data);

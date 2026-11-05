@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
 import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startGame, startGameAfterAd, finishGame, startAdPlay, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import arenaBg from "@/assets/arena-bg.jpg";
@@ -32,7 +32,6 @@ function Home() {
   const [playing, setPlaying] = useState(false);
   const [result, setResult] = useState<{ score: number; reward: number; kills: number } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendingAd, setPendingAd] = useState<{ adSessionId: string; expiresAt: number } | null>(null);
   const adLaunchRef = useRef(false);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -53,133 +52,70 @@ function Home() {
     finally { setBusy(false); }
   };
 
-  const startVerifiedAdGame = useCallback(async (player: Awaited<ReturnType<typeof getAdPlayStatus>>) => {
-    if (adLaunchRef.current) return;
-    adLaunchRef.current = true;
-    setPendingAd(null);
-    setPlayer(player);
-    haptic("success");
-    try {
-      const session = await startGame(auth());
-      setGameId(session.gameId);
-      setEnemyTotal(session.enemyTotal);
-      setResult(null);
-      setPlaying(true);
-      toast.success("AdsGram reward verified. Starting your game!");
-    } catch (e: any) {
-      adLaunchRef.current = false;
-      toast.error("Your ad reward is verified, but the game could not start: " + (e?.message || "Please tap Play to start."));
-    }
-  }, [setPlayer]);
-
-  useEffect(() => {
-    if (!pendingAd || playing) return;
-    let stopped = false;
-    let timer: number | undefined;
-    let delayMs = 650;
-
-    const checkReward = async () => {
-      try {
-        const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAd.adSessionId });
-        if (stopped) return;
-        if (status.verified) {
-          setPendingAd(null);
-          await startVerifiedAdGame(status);
-          return;
-        }
-        if (status.expired || Date.now() >= pendingAd.expiresAt) {
-          setPendingAd(null);
-          toast.error("AdsGram did not confirm this ad before the session expired. Please try again.");
-          return;
-        }
-      } catch {
-        // Retry temporary network errors while the one-time session is still valid.
-      }
-      if (!stopped) {
-        timer = window.setTimeout(checkReward, delayMs);
-        delayMs = Math.min(Math.round(delayMs * 1.4), 2500);
-      }
-    };
-
-    void checkReward();
-    return () => {
-      stopped = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [pendingAd, playing, startVerifiedAdGame]);
-
   const onEnd = async (score: number, kills: number) => {
     adLaunchRef.current = false;
     setPlaying(false);
     try {
       const p = await finishGame({ ...auth(), gameId, score, kills });
       setPlayer(p);
-      setResult({ score, reward: p.reward, kills });
+      setResult({ score, reward: p.reward, kills, pendingVerification: p.pendingVerification });
+      if (p.pendingVerification) toast.info("Game finished. Coins will be added automatically after AdsGram server verification.");
     } catch (e: any) {
       toast.error(e.message);
     }
   };
 
   const watchAd = async () => {
-    if (busy || playing || pendingAd) return;
+    if (busy || playing) return;
     setBusy(true);
     let adSessionId = "";
     let adCompleted = false;
-    let expiresAt = 0;
+    const launchAdGame = async () => {
+      const game = await startGameAfterAd({ ...auth(), adSessionId });
+      adLaunchRef.current = true;
+      setGameId(game.gameId);
+      setEnemyTotal(game.enemyTotal);
+      setResult(null);
+      haptic("success");
+      setPlaying(true);
+      toast.success("Ad completed. Starting your game!");
+    };
     try {
       const session = await startAdPlay(auth());
       adSessionId = session.adSessionId;
-      expiresAt = session.expiresAt;
-
       let adResult;
       try {
         adResult = await showRewardAd();
       } catch (adError: any) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
-          await startVerifiedAdGame(cancelled);
+          await launchAdGame();
           return;
         }
-        const reason = adError?.message || "No ad is available right now.";
-        toast.info(reason + " Tap again to load a fresh ad.");
+        toast.info((adError?.message || "No ad is available right now.") + " Tap again to request a fresh ad.");
         return;
       }
-
       if (!adResult.done) {
-        const cancelled = await cancelAdPlay({ ...auth(), adSessionId });
-        if (cancelled.verified) await startVerifiedAdGame(cancelled);
-        else toast.info("The ad was not completed. Tap again to load a fresh ad.");
+        const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
+        if (cancelled?.verified) await launchAdGame();
+        else toast.info("The ad was not completed. Tap again to request a fresh ad.");
         return;
       }
-
       adCompleted = true;
-      try {
-        const initial = await grantAdPlay({ ...auth(), adSessionId });
-        if (initial.verified) {
-          await startVerifiedAdGame(initial);
-          return;
-        }
-      } catch {
-        // The server-to-server Reward URL may arrive before or after this request.
-      }
-
-      // Keep the completed session alive. Poll the Worker until its callback verifies it.
-      setPendingAd({ adSessionId, expiresAt });
-      toast.info("Ad completed. Your game will start automatically after server verification.");
+      // On Reward blocks, show() only resolves after a full watch. Do not wait for Reward URL.
+      // The Worker holds the resulting coins until the separate server callback confirms the ad.
+      await launchAdGame();
     } catch (e: any) {
       if (adSessionId && !adCompleted) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
-          await startVerifiedAdGame(cancelled);
+          await launchAdGame();
           return;
         }
       }
-      if (adCompleted && adSessionId) {
-        // Do not cancel a completed ad because of a transient frontend/network error.
-        setPendingAd({ adSessionId, expiresAt });
-      } else {
-        toast.error(e?.description || e?.message || "Ad could not be loaded. Please tap again to retry.");
-      }
+      toast.error(adCompleted
+        ? "The ad finished, but the game could not start. Please refresh and try again."
+        : (e?.description || e?.message || "Ad could not be loaded. Please tap again to retry."));
     } finally {
       setBusy(false);
     }
@@ -249,7 +185,11 @@ function Home() {
           {result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Skull className="mx-auto h-9 w-9 text-destructive" />}
           <p className="mt-1 font-display text-2xl">{result.reward > 0 ? `${result.kills} enemies down!` : "K.O.!"}</p>
           <p className="text-sm text-muted-foreground">Score {result.score}</p>
-          <p className={`mt-1 font-display text-3xl ${result.reward > 0 ? "text-gold-gradient" : "text-muted-foreground"}`}>+{result.reward} coins</p>
+          {result.pendingVerification ? (
+            <p className="mt-2 text-sm text-amber-500">Ad verification pending. Your earned coins will be added after server confirmation.</p>
+          ) : (
+            <p className={`mt-1 font-display text-3xl ${result.reward > 0 ? "text-gold-gradient" : "text-muted-foreground"}`}>+{result.reward} coins</p>
+          )}
           {result.reward === 0 && <p className="mt-1 text-xs text-muted-foreground">Take down enemies to earn {COINS_PER_KILL} coins each.</p>}
         </section>
       )}

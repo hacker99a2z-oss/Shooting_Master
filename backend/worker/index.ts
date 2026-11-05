@@ -30,7 +30,7 @@ interface Env {
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=600000;
+const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -99,6 +99,27 @@ async function txRun(db:any,fn:(tx:any)=>Promise<any>){
   try{const value=await fn(tx);await tx.commit();return value;}
   catch(e){await tx.rollback();throw e;}
 }
+
+async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:number,kills:number){
+  const used=await tx.execute({sql:"UPDATE game_sessions SET consumed_at=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[Date.now(),String(session.id),tgId]});
+  if(used.rowsAffected!==1)throw new Error("Game result already submitted");
+  const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
+  const cooldown=Number(session.uses_extra_play)>0?Date.now()+AD_COOLDOWN_MS:null;
+  await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=? WHERE tg_id=?",
+    args:[reward,sid,reward,reward,sid,score,t,t,cooldown,tgId]});
+  let p=await playerRow(db,tgId,tx);
+  if(p&&p.referred_by!=null&&Number(p.games_played)>=REFERRAL_GAMES_NEEDED&&Number(p.referral_paid)===0){
+    const mark=await tx.execute({sql:"UPDATE players SET referral_paid=1 WHERE tg_id=? AND referral_paid=0",args:[tgId]});
+    if(mark.rowsAffected===1){
+      const referrer=Number(p.referred_by);
+      await tx.execute({sql:"UPDATE players SET coins=coins+?,referral_count=referral_count+1 WHERE tg_id=?",args:[REFERRAL_REWARD,referrer]});
+      await tx.execute({sql:"INSERT OR IGNORE INTO referral_rewards (referred_tg_id,referrer_tg_id,reward,created_at) VALUES (?,?,?,?)",args:[tgId,referrer,REFERRAL_REWARD,new Date().toISOString()]});
+    }
+  }
+  p=await playerRow(db,tgId,tx);
+  return {...view(p!),reward,pendingVerification:false};
+}
+
 function prize(rank:number){
   if(rank<1||rank>30)return 0;
   const step=(30*0.5-10)/(30*29/2);
@@ -364,8 +385,14 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         if(pending.rows.length!==1)return {ok:false as const,status:409,error:"Multiple pending ad sessions"};
         const claimed=await tx.execute({sql:"UPDATE ad_sessions SET status='rewarded',rewarded_at=? WHERE id=? AND tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=?",args:[now,String(session.id),tgId,now]});
         if(claimed.rowsAffected!==1)return {ok:false as const,status:409,error:"Ad reward session already consumed"};
-        const credited=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,tgId]});
-        if(credited.rowsAffected!==1)throw new Error("Player not found");
+        const linked=await tx.execute({sql:"SELECT * FROM game_sessions WHERE ad_session_id=? AND tg_id=? AND consumed_at IS NULL LIMIT 1",args:[String(session.id),tgId]});
+        const game=linked.rows[0] as Row|undefined;
+        if(game&&game.pending_score!=null&&game.pending_kills!=null){
+          await settleGameResult(db,tx,tgId,game,Number(game.pending_score),Number(game.pending_kills));
+        }else if(!game||Number(game.expires_at)<now){
+          const credited=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,tgId]});
+          if(credited.rowsAffected!==1)throw new Error("Player not found");
+        }
         return {ok:true as const,duplicate:false};
       });
       if(!outcome.ok)return json({error:outcome.error},outcome.status);
@@ -380,6 +407,39 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   const db=dbFor(env);
   try{
     if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:"")));
+    if(path==="/api/game/start-ad"){
+      const adSessionId=typeof body.adSessionId==="string"?body.adSessionId.slice(0,64):"";
+      if(!adSessionId)return json({error:"Ad session ID is required"},400);
+      const result=await txRun(db,async(tx)=>{
+        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+        const now=Date.now();
+        const active=await tx.execute({sql:"SELECT id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",args:[user.id,now]});
+        if(active.rows.length)throw new Error("A game is already active");
+        const selected=await tx.execute({sql:"SELECT status,expires_at FROM ad_sessions WHERE id=? AND tg_id=?",args:[adSessionId,user.id]});
+        const ad=selected.rows[0] as Row|undefined;
+        if(!ad)throw new Error("Ad session not found");
+        if(Number(ad.expires_at)<now)throw new Error("Ad session expired. Please request a new ad.");
+        const status=String(ad.status);
+        let usesExtra=0,linkedAdSessionId:string|null=null;
+        if(status==="rewarded"){
+          if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>now)throw new Error("Next ad unlocks soon — please wait");
+          const spent=await tx.execute({sql:"UPDATE players SET extra_plays=extra_plays-1 WHERE tg_id=? AND extra_plays>0",args:[user.id]});
+          if(spent.rowsAffected!==1)throw new Error("Verified ad play is no longer available. Please refresh.");
+          usesExtra=1;
+        }else if(status==="created"||status==="awaiting_postback"){
+          usesExtra=2;
+          linkedAdSessionId=adSessionId;
+        }else{
+          throw new Error("Ad was not completed. Please tap again to request a new ad.");
+        }
+        const gameId=crypto.randomUUID();
+        const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
+        const expiresAt=now+GAME_TTL_MS;
+        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,ad_session_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,usesExtra,linkedAdSessionId,now,expiresAt]});
+        return {gameId,enemyTotal,expiresAt};
+      });
+      return json(result);
+    }
     if(path==="/api/game/start"){
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
@@ -410,22 +470,16 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const session=selected.rows[0] as Row|undefined;if(!session)throw new Error("Game session expired or already submitted");
         const total=Number(session.enemy_total);
         if(kills<0||kills>total||(kills>0&&score<kills*COINS_PER_KILL))throw new Error("Game result is not valid");
-        const used=await tx.execute({sql:"UPDATE game_sessions SET consumed_at=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[Date.now(),id,user.id]});
-        if(used.rowsAffected!==1)throw new Error("Game result already submitted");
-        const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
-        const cooldown=Number(session.uses_extra_play)===1?Date.now()+AD_COOLDOWN_MS:null;
-        await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=? WHERE tg_id=?",
-          args:[reward,sid,reward,reward,sid,score,t,t,cooldown,user.id]});
-        let p=await playerRow(db,user.id,tx);
-        if(p&&p.referred_by!=null&&Number(p.games_played)>=REFERRAL_GAMES_NEEDED&&Number(p.referral_paid)===0){
-          const mark=await tx.execute({sql:"UPDATE players SET referral_paid=1 WHERE tg_id=? AND referral_paid=0",args:[user.id]});
-          if(mark.rowsAffected===1){
-            const referrer=Number(p.referred_by);
-            await tx.execute({sql:"UPDATE players SET coins=coins+?,referral_count=referral_count+1 WHERE tg_id=?",args:[REFERRAL_REWARD,referrer]});
-            await tx.execute({sql:"INSERT OR IGNORE INTO referral_rewards (referred_tg_id,referrer_tg_id,reward,created_at) VALUES (?,?,?,?)",args:[user.id,referrer,REFERRAL_REWARD,new Date().toISOString()]});
+        if(session.pending_score!=null||session.pending_kills!=null)throw new Error("Game result is already waiting for ad verification");
+        if(Number(session.uses_extra_play)===2){
+          const ad=await tx.execute({sql:"SELECT status FROM ad_sessions WHERE id=? AND tg_id=?",args:[String(session.ad_session_id),user.id]});
+          if(String(ad.rows[0]?.status)!=="rewarded"){
+            await tx.execute({sql:"UPDATE game_sessions SET pending_score=?,pending_kills=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[score,kills,id,user.id]});
+            const player=await playerRow(db,user.id,tx);if(!player)throw new Error("Player not found");
+            return {...view(player),reward:0,pendingVerification:true};
           }
         }
-        p=await playerRow(db,user.id,tx);return {...view(p!),reward};
+        return await settleGameResult(db,tx,user.id,session,score,kills);
       });
       return json(result);
     }

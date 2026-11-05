@@ -40,6 +40,15 @@ try {
   } else {
     console.log("Turso schema migration 0003 already applied.");
   }
+
+  const adGameMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=4 LIMIT 1");
+  if (!adGameMigration.rows.length) {
+    const adGameSql = await readFile(new URL("../migrations/0004_ad_reward_game_sessions.sql", import.meta.url), "utf8");
+    await db.executeMultiple(adGameSql);
+    console.log("Turso schema migration 0004 applied.");
+  } else {
+    console.log("Turso schema migration 0004 already applied.");
+  }
 } finally {
   db.close();
 }
