@@ -7,6 +7,7 @@ import {
   keccak256,
   parseEventLogs,
   parseUnits,
+  type Address,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -221,7 +222,7 @@ async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
   ]);
   if(symbol!=="USDT"||Number(decimals)!==18)throw new PayoutSafetyError("Configured BSC token does not match the expected USDT contract and 18 decimals.");
 
-  const recipient=p.wallet as \`0x\${string}\`;
+  const recipient=p.wallet as Address;
   let txHash=typeof row.payout_tx_hash==="string"?row.payout_tx_hash:"";
   let rawTx=typeof row.payout_raw_tx==="string"?row.payout_raw_tx as Hex:"";
 
