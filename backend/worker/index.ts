@@ -299,7 +299,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     if(path==="/api/leaderboard"){
       const sid=seasonId();
-      const rows=await db.execute({sql:"SELECT tg_id,first_name,username,season_coins FROM players WHERE season_id=? AND season_coins>=500 ORDER BY season_coins DESC,created_at ASC LIMIT 50",args:[sid]});
+      const rows=await db.execute({sql:"SELECT tg_id,first_name,username,season_coins FROM players WHERE season_id=? AND games_played>=1 ORDER BY season_coins DESC,created_at ASC LIMIT 50",args:[sid]});
       return json({list:rows.rows.map((r:any,i:number)=>({rank:i+1,tgId:Number(r.tg_id),name:String(r.first_name),username:r.username==null?null:String(r.username),coins:Number(r.season_coins),prize:prize(i+1),isMe:Number(r.tg_id)===user.id})),seasonEndsAt:(sid+1)*SEASON_MS});
     }
     if(path==="/api/withdrawals"){
