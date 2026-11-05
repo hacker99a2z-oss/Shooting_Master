@@ -201,10 +201,6 @@ function Home() {
         </section>
       )}
 
-      <section className="mt-4 grid grid-cols-3 gap-3">
-        <Stat icon={<Swords className="h-5 w-5 text-primary" />} label="Games" value={me?.gamesPlayed ?? 0} />
-      </section>
-
       <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
         <h3 className="mb-3 text-lg">How to win</h3>
         <ul className="space-y-3 text-sm">
