@@ -338,7 +338,7 @@ async function telegramWebhook(request:Request,env:Env){
 async function api(request:Request,env:Env,ctx:ExecutionContext){
   const path=new URL(request.url).pathname.replace(/\/+$/,"")||"/";
   if(path==="/telegram/webhook")return telegramWebhook(request,env);
-  if(request.method==="GET"&&path==="/health")return json({ok:true,service:"shooting-master-api"});
+  if(request.method==="GET"&&path==="/health")return json({ok:true,service:"shooting-master-api",adsgramRewardConfigured:Boolean(env.ADSGRAM_REWARD_SECRET)});
   if(request.method==="GET"&&path==="/api/adsgram/reward"){
     const url=new URL(request.url);
     const suppliedKey=url.searchParams.get("key")||"";
