@@ -30,7 +30,7 @@ function Home() {
   const [gameId, setGameId] = useState("");
   const [enemyTotal, setEnemyTotal] = useState(9);
   const [playing, setPlaying] = useState(false);
-  const [result, setResult] = useState<{ score: number; reward: number; kills: number } | null>(null);
+  const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const adLaunchRef = useRef(false);
 
