@@ -75,7 +75,7 @@ async function ensurePlayer(db:any,user:AuthUser,startParam=""){
     args:[user.id,user.firstName,user.username,user.photoUrl,referrer,seasonId(),new Date().toISOString()]});
   // Apply the first valid referral link to an account that has not already been attributed.
   // Never overwrite an existing referrer or attach a self-referral.
-  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
+  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 AND games_played=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
   const row=await playerRow(db,user.id);if(!row)throw new Error("Could not create player");return row;
 }
 async function txRun(db:any,fn:(tx:any)=>Promise<any>){
