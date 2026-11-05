@@ -12,7 +12,8 @@
     "deploy": "wrangler deploy --config worker/wrangler.toml"
   },
   "dependencies": {
-    "@libsql/client": "^0.15.15"
+    "@libsql/client": "^0.15.15",
+    "viem": "^2.57.16"
   },
   "devDependencies": {
     "wrangler": "^4.68.0"
