@@ -389,14 +389,16 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const player=await playerRow(db,tgId,tx);
         if(!player)return {ok:false as const,status:404,error:"Player not found",reason:"player_not_found"};
         const now=Date.now();
-        const pending=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=? ORDER BY created_at DESC LIMIT 2",args:[tgId,now]});
+        // AdsGram Reward URL identifies the Telegram user, not an individual ad session.
+        // Consume that user's oldest eligible session first so delayed callbacks can be
+        // processed in order while allowing the user to start another ad in the meantime.
+        const pending=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=? ORDER BY created_at ASC,id ASC LIMIT 1",args:[tgId,now]});
         const session=pending.rows[0] as Row|undefined;
         if(!session){
           const recent=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status='rewarded' AND rewarded_at>? ORDER BY rewarded_at DESC LIMIT 1",args:[tgId,now-AD_TTL_MS]});
           if(recent.rows.length)return {ok:true as const,duplicate:true,disposition:"duplicate"};
           return {ok:false as const,status:409,error:"No eligible ad session",reason:"no_eligible_session"};
         }
-        if(pending.rows.length!==1)return {ok:false as const,status:409,error:"Multiple pending ad sessions",reason:"multiple_pending_sessions"};
         const claimed=await tx.execute({sql:"UPDATE ad_sessions SET status='rewarded',rewarded_at=? WHERE id=? AND tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=?",args:[now,String(session.id),tgId,now]});
         if(claimed.rowsAffected!==1)return {ok:false as const,status:409,error:"Ad reward session already consumed",reason:"session_already_consumed"};
         const linked=await tx.execute({sql:"SELECT * FROM game_sessions WHERE ad_session_id=? AND tg_id=? AND consumed_at IS NULL LIMIT 1",args:[String(session.id),tgId]});
@@ -514,7 +516,11 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const now=Date.now();
         await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
         const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,now]});
-        if(Number(pending.rows[0]?.total??0)>=1)throw new Error("A rewarded ad is still awaiting server confirmation. Please try again shortly.");
+        // Reserve a maximum of MAX_EXTRA_PLAYS across verified plays plus in-flight
+        // ad sessions. A missing/delayed postback must not hard-lock the next ad after one view.
+        const pendingCount=Number(pending.rows[0]?.total??0);
+        if(Number(p.extra_plays)+pendingCount>=MAX_EXTRA_PLAYS)
+          throw new Error("You have reached the maximum number of pending or verified extra plays. Please wait for server confirmation.");
         const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
         return {adSessionId,expiresAt};
