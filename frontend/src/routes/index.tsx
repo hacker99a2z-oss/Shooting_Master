@@ -155,14 +155,15 @@ function Home() {
       <section className="relative overflow-hidden rounded-3xl border border-primary/30 shadow-card">
         <img src={arenaBg} alt="Military base arena" className="absolute inset-0 h-full w-full object-cover object-top" />
         <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/50 to-background" />
-        <div className="relative flex min-h-[340px] flex-col justify-end p-5">
+        <div className="relative flex min-h-[340px] flex-col justify-end p-5 pb-12">
           <span className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground">
             <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" /> Enemy squad incoming
           </span>
           <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">+{COINS_PER_KILL} coins each.</span></h2>
           <p className="mt-2 text-sm text-foreground/80">Hide behind cover, raise your shield and take them down one by one.</p>
 
-          <div className="mt-5">
+          <p className="mt-4 text-center text-xs font-medium text-foreground/90">You can play 1 free game every day. Want to play more? Watch ads to play.</p>
+          <div className="mt-2">
             {isLoading ? (
               <div className="h-16 animate-pulse rounded-2xl bg-muted" />
             ) : error ? (
@@ -174,7 +175,7 @@ function Home() {
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform"
               >
                 <Play className="h-6 w-6 fill-current" />
-                {me!.canPlayFree ? "Play free game" : `Play (${me!.extraPlays} left)`}
+                {me!.canPlayFree ? "Play (Daily 1 Time)" : `Play (${me!.extraPlays} left)`}
               </button>
             ) : (
               <button
@@ -202,22 +203,6 @@ function Home() {
 
       <section className="mt-4 grid grid-cols-3 gap-3">
         <Stat icon={<Swords className="h-5 w-5 text-primary" />} label="Games" value={me?.gamesPlayed ?? 0} />
-        <div className="col-span-2 rounded-2xl border bg-card p-3 shadow-card">
-          <div className="flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-sm font-medium"><Gift className="h-4 w-4 text-success" /> Daily {DAILY_GAMES_GOAL} games</p>
-            <p className="font-display tabular-nums">{Math.min(daily, DAILY_GAMES_GOAL)}/{DAILY_GAMES_GOAL}</p>
-          </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-gold transition-[width]" style={{ width: `${Math.min(100, (daily / DAILY_GAMES_GOAL) * 100)}%` }} />
-          </div>
-          <button
-            onClick={claimBonus}
-            disabled={busy || !me || daily < DAILY_GAMES_GOAL || me.bonusClaimedToday}
-            className="mt-2 w-full rounded-xl bg-success py-1.5 font-display text-sm text-primary-foreground disabled:bg-muted disabled:text-muted-foreground active:scale-95 transition-transform"
-          >
-            {me?.bonusClaimedToday ? "Claimed today ✓" : `Claim $${coinsToUsd(BONUS_MIN_COINS).toFixed(2)}–$${coinsToUsd(BONUS_MAX_COINS).toFixed(2)}`}
-          </button>
-        </div>
       </section>
 
       <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
