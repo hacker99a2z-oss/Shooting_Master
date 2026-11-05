@@ -94,10 +94,15 @@ jobs:
           PAYOUT_ENABLED: ${{ vars.PAYOUT_ENABLED }}
           PAYOUT_PRIVATE_KEY: ${{ secrets.PAYOUT_PRIVATE_KEY }}
           BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
+          ADSGRAM_REWARD_SECRET: ${{ secrets.ADSGRAM_REWARD_SECRET }}
         run: |
           printf '%s' "$TURSO_DATABASE_URL" | npx wrangler secret put TURSO_DATABASE_URL --config worker/wrangler.toml
           printf '%s' "$TURSO_AUTH_TOKEN" | npx wrangler secret put TURSO_AUTH_TOKEN --config worker/wrangler.toml
           printf '%s' "$TELEGRAM_BOT_TOKEN" | npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
+          if [ -n "${ADSGRAM_REWARD_SECRET:-}" ]; then
+            printf '%s' "$ADSGRAM_REWARD_SECRET" | npx wrangler secret put ADSGRAM_REWARD_SECRET --config worker/wrangler.toml
+            echo "AdsGram server-side reward callback secret uploaded."
+          fi
           if [[ "${PAYOUT_ENABLED,,}" == "true" ]]; then
             printf '%s' "$PAYOUT_PRIVATE_KEY" | npx wrangler secret put PAYOUT_PRIVATE_KEY --config worker/wrangler.toml
             printf '%s' "$BSC_RPC_URL" | npx wrangler secret put BSC_RPC_URL --config worker/wrangler.toml

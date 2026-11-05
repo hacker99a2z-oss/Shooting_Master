@@ -74,7 +74,7 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 
 ## AdsGram server-side reward confirmation
 
-After deploying the Worker, add a strong random `ADSGRAM_REWARD_SECRET` as a Worker Secret in Cloudflare Dashboard → Workers & Pages → `shooting-master-api` → Settings → Variables and Secrets. Do not commit the value or expose it as a Vite/frontend variable.
+Add a strong random `ADSGRAM_REWARD_SECRET` as a GitHub Actions repository Secret (recommended; the deployment workflow uploads it to the Worker), or set it directly as a Worker Secret in Cloudflare Dashboard → Workers & Pages → `shooting-master-api` → Settings → Variables and Secrets. Do not commit the value or expose it as a Vite/frontend variable.
 
 Configure the AdsGram Reward URL as:
 

@@ -430,6 +430,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json(result);
     }
     if(path==="/api/ad/start"){
+      if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram server-side reward verification is not configured. Please contact support."},503);
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         if(Number(p.extra_plays)>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
