@@ -117,6 +117,7 @@ async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:numb
     }
   }
   p=await playerRow(db,tgId,tx);
+  console.info("[AdsGram] game coins credited", { kills, reward });
   return {...view(p!),reward,pendingVerification:false};
 }
 
@@ -364,39 +365,59 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     const url=new URL(request.url);
     const suppliedKey=url.searchParams.get("key")||"";
     const rawUserId=url.searchParams.get("userid")||url.searchParams.get("userId")||"";
-    if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram reward callback is not configured"},503);
-    if(!equal(suppliedKey,env.ADSGRAM_REWARD_SECRET))return json({error:"Unauthorized"},401);
-    if(!/^[0-9]{1,19}$/.test(rawUserId))return json({error:"Invalid Telegram user ID"},400);
+    console.info("[AdsGram] Reward URL hit", { userIdPresent:Boolean(rawUserId), keyPresent:Boolean(suppliedKey) });
+    if(!env.ADSGRAM_REWARD_SECRET){
+      console.error("[AdsGram] callback rejected: Worker secret is missing");
+      return json({error:"AdsGram reward callback is not configured"},503);
+    }
+    if(!equal(suppliedKey,env.ADSGRAM_REWARD_SECRET)){
+      console.error("[AdsGram] callback rejected: shared secret mismatch");
+      return json({error:"Unauthorized"},401);
+    }
+    if(!/^[0-9]{1,19}$/.test(rawUserId)){
+      console.error("[AdsGram] callback rejected: userid macro missing or invalid");
+      return json({error:"Invalid Telegram user ID"},400);
+    }
     const tgId=Number(rawUserId);
-    if(!Number.isSafeInteger(tgId))return json({error:"Invalid Telegram user ID"},400);
+    if(!Number.isSafeInteger(tgId)){
+      console.error("[AdsGram] callback rejected: userid is not a safe integer");
+      return json({error:"Invalid Telegram user ID"},400);
+    }
     const db=dbFor(env);
     try{
       const outcome=await txRun(db,async(tx)=>{
         const player=await playerRow(db,tgId,tx);
-        if(!player)return {ok:false as const,status:404,error:"Player not found"};
+        if(!player)return {ok:false as const,status:404,error:"Player not found",reason:"player_not_found"};
         const now=Date.now();
         const pending=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=? ORDER BY created_at DESC LIMIT 2",args:[tgId,now]});
         const session=pending.rows[0] as Row|undefined;
         if(!session){
           const recent=await tx.execute({sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status='rewarded' AND rewarded_at>? ORDER BY rewarded_at DESC LIMIT 1",args:[tgId,now-AD_TTL_MS]});
-          if(recent.rows.length)return {ok:true as const,duplicate:true};
-          return {ok:false as const,status:409,error:"No eligible ad session"};
+          if(recent.rows.length)return {ok:true as const,duplicate:true,disposition:"duplicate"};
+          return {ok:false as const,status:409,error:"No eligible ad session",reason:"no_eligible_session"};
         }
-        if(pending.rows.length!==1)return {ok:false as const,status:409,error:"Multiple pending ad sessions"};
+        if(pending.rows.length!==1)return {ok:false as const,status:409,error:"Multiple pending ad sessions",reason:"multiple_pending_sessions"};
         const claimed=await tx.execute({sql:"UPDATE ad_sessions SET status='rewarded',rewarded_at=? WHERE id=? AND tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>=?",args:[now,String(session.id),tgId,now]});
-        if(claimed.rowsAffected!==1)return {ok:false as const,status:409,error:"Ad reward session already consumed"};
+        if(claimed.rowsAffected!==1)return {ok:false as const,status:409,error:"Ad reward session already consumed",reason:"session_already_consumed"};
         const linked=await tx.execute({sql:"SELECT * FROM game_sessions WHERE ad_session_id=? AND tg_id=? AND consumed_at IS NULL LIMIT 1",args:[String(session.id),tgId]});
         const game=linked.rows[0] as Row|undefined;
+        let disposition="verified_game_active";
         if(game&&game.pending_score!=null&&game.pending_kills!=null){
           await settleGameResult(db,tx,tgId,game,Number(game.pending_score),Number(game.pending_kills));
+          disposition="coins_settled";
         }else if(!game||Number(game.expires_at)<now){
           const credited=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,tgId]});
           if(credited.rowsAffected!==1)throw new Error("Player not found");
+          disposition="extra_play_added";
         }
-        return {ok:true as const,duplicate:false};
+        return {ok:true as const,duplicate:false,disposition};
       });
-      if(!outcome.ok)return json({error:outcome.error},outcome.status);
-      return json({ok:true,duplicate:outcome.duplicate});
+      if(!outcome.ok){
+        console.warn("[AdsGram] callback rejected", { reason:outcome.reason, httpStatus:outcome.status });
+        return json({error:outcome.error},outcome.status);
+      }
+      console.info("[AdsGram] callback accepted", { duplicate:outcome.duplicate, disposition:outcome.disposition });
+      return json({ok:true,duplicate:outcome.duplicate,disposition:outcome.disposition});
     }finally{db.close();}
   }
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
@@ -476,6 +497,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           if(String(ad.rows[0]?.status)!=="rewarded"){
             await tx.execute({sql:"UPDATE game_sessions SET pending_score=?,pending_kills=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[score,kills,id,user.id]});
             const player=await playerRow(db,user.id,tx);if(!player)throw new Error("Player not found");
+            console.info("[AdsGram] game result waiting for Reward URL verification", { kills, score });
             return {...view(player),reward:0,pendingVerification:true};
           }
         }
