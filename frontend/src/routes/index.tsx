@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
+import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
 import { startGame, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
@@ -149,7 +150,7 @@ function Home() {
   const daily = me?.dailyGames ?? 0;
 
   return (
-    <AppShell title="Battle Arena">
+    <AppShell title="Battle Arena" showProfile action={<SensitivitySettings />}>
       {playing && <ShooterGame onEnd={onEnd} enemyTotal={enemyTotal} />}
 
       <section className="relative overflow-hidden rounded-3xl border border-primary/30 shadow-card">

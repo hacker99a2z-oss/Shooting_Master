@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Crosshair, Shield } from "lucide-react";
 import { haptic } from "@/lib/tg";
 import { COINS_PER_KILL, wavePlan } from "@/lib/rules";
+import { loadSensitivity, sensFactor } from "@/lib/sensitivity";
 
 // Arena shooter: enemies come from the front (top), max 3-4 at once.
 // Left joystick moves the hero. Hold SHIELD to raise the shield in front.
@@ -32,18 +33,28 @@ const COVER_SIZES: Record<Cover["kind"], () => { w: number; h: number }> = {
 };
 const KINDS: Cover["kind"][] = ["barrier", "barrier", "crate", "crate", "barrel", "case"];
 
-// New random obstacle layout every game. Obstacles never overlap and leave open lanes between them.
+// New random obstacle layout every game, spread over the whole field: the arena is split into a grid
+// and each cell gets at most one obstacle at a random spot inside it. Obstacles never overlap.
 function randomCovers(WW: number, H: number, heroX: number, heroY: number): Cover[] {
   const out: Cover[] = [];
-  const target = Math.round((WW / 400) * 4);
-  for (let tries = 0; out.length < target && tries < 400; tries++) {
-    const kind = KINDS[Math.floor(Math.random() * KINDS.length)]!;
-    const { w, h } = COVER_SIZES[kind]();
-    const x = 20 + Math.random() * (WW - 40 - w);
-    const y = H * 0.4 + Math.random() * (H * 0.46 - h);
-    if (Math.hypot(x + w / 2 - heroX, y + h / 2 - heroY) < 110) continue;
-    if (out.some((c) => x < c.x + c.w + 60 && x + w + 60 > c.x && y < c.y + c.h + 50 && y + h + 50 > c.y)) continue;
-    out.push({ x, y, w, h, kind });
+  const top = H * 0.36, bottom = H * 0.92;
+  const cols = Math.max(3, Math.round(WW / 170));
+  const rows = Math.max(3, Math.round((bottom - top) / 130));
+  const cw = WW / cols, ch = (bottom - top) / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (Math.random() < 0.3) continue; // leave some cells empty for open lanes
+      for (let tries = 0; tries < 8; tries++) {
+        const kind = KINDS[Math.floor(Math.random() * KINDS.length)]!;
+        const { w, h } = COVER_SIZES[kind]();
+        const x = Math.max(20, Math.min(WW - 20 - w, c * cw + Math.random() * Math.max(1, cw - w)));
+        const y = Math.max(top, Math.min(bottom - h, top + r * ch + Math.random() * Math.max(1, ch - h)));
+        if (Math.hypot(x + w / 2 - heroX, y + h / 2 - heroY) < 110) continue;
+        if (out.some((o) => x < o.x + o.w + 40 && x + w + 40 > o.x && y < o.y + o.h + 40 && y + h + 40 > o.y)) continue;
+        out.push({ x, y, w, h, kind });
+        break;
+      }
+    }
   }
   return out;
 }
@@ -62,6 +73,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   const joy = useRef<{ id: number; cx: number; cy: number } | null>(null);
   const aimPtr = useRef<{ id: number; lx: number; ly: number } | null>(null);
   const shieldPtr = useRef<{ id: number; cx: number; cy: number } | null>(null);
+  const sens = useRef(loadSensitivity());
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -330,7 +342,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
       const camTarget = Math.max(0, Math.min(WW - W, p.x - W / 2));
       camX += (camTarget - camX) * Math.min(1, 0.15 * dt);
       p.shieldT += ((inp.shield ? 1 : 0) - p.shieldT) * 0.3 * dt;
-      { let d = inp.shieldA - p.shieldA; d = Math.atan2(Math.sin(d), Math.cos(d)); p.shieldA += d * Math.min(1, 0.4 * dt); }
+      { let d = inp.shieldA - p.shieldA; d = Math.atan2(Math.sin(d), Math.cos(d)); p.shieldA += d * Math.min(1, 0.4 * sensFactor(sens.current.shield) * dt); }
       if (done && p.dead > 0) p.dead = Math.min(1, p.dead + 0.04 * dt);
       p.recoil = Math.max(0, p.recoil - 0.1 * dt);
 
@@ -523,7 +535,8 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   };
   const shootMove = (e: React.PointerEvent) => {
     const a = aimPtr.current; if (!a || a.id !== e.pointerId) return;
-    input.current.aimX += (e.clientX - a.lx) * 2.2; input.current.aimY += (e.clientY - a.ly) * 2.2;
+    const k = 2.2 * sensFactor(sens.current.shoot);
+    input.current.aimX += (e.clientX - a.lx) * k; input.current.aimY += (e.clientY - a.ly) * k;
     a.lx = e.clientX; a.ly = e.clientY;
   };
   const shootUp = () => {
@@ -540,7 +553,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   const shieldMove = (e: React.PointerEvent) => {
     const s = shieldPtr.current; if (!s || s.id !== e.pointerId) return;
     const dx = e.clientX - s.cx, dy = e.clientY - s.cy;
-    if (Math.hypot(dx, dy) > 12) input.current.shieldA = Math.atan2(dy, dx);
+    if (Math.hypot(dx, dy) > 12 / sensFactor(sens.current.shield)) input.current.shieldA = Math.atan2(dy, dx);
   };
   const shieldUp = () => { shieldPtr.current = null; shieldSet(false); };
   const shieldSet = (v: boolean) => { input.current.shield = v; setShieldOn(v); if (v) haptic("light"); };
@@ -579,14 +592,14 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         <button
           onPointerDown={shieldDown} onPointerMove={shieldMove}
           onPointerUp={shieldUp} onPointerCancel={shieldUp}
-          className={`absolute bottom-36 right-6 flex h-[72px] w-[72px] touch-none items-center justify-center rounded-full border-4 border-hud-blue glow-blue transition-transform ${shieldOn ? "scale-110 bg-hud-blue/70" : "bg-background/50"}`}
+          className={`absolute bottom-36 right-5 flex h-[88px] w-[88px] touch-none items-center justify-center rounded-full border-4 border-hud-blue glow-blue transition-transform duration-100 ${shieldOn ? "scale-90 bg-hud-blue/70" : "bg-background/50"}`}
           aria-label="Shield"
         >
-          <Shield className="h-9 w-9 fill-hud-blue/60 text-foreground" />
+          <Shield className="h-11 w-11 fill-hud-blue/60 text-foreground" />
         </button>
         <button
           onPointerDown={shootDown} onPointerMove={shootMove} onPointerUp={shootUp} onPointerCancel={shootUp}
-          className={`absolute bottom-6 right-5 flex h-24 w-24 touch-none items-center justify-center rounded-full border-4 border-hud-orange glow-orange transition-transform ${aimOn ? "scale-110 bg-hud-orange/60" : "bg-background/60"}`}
+          className={`absolute bottom-6 right-5 flex h-24 w-24 touch-none items-center justify-center rounded-full border-4 border-hud-orange glow-orange transition-transform duration-100 ${aimOn ? "scale-90 bg-hud-orange/60" : "bg-background/60"}`}
           aria-label="Shoot"
         >
           <Crosshair className="h-11 w-11 text-foreground" />
