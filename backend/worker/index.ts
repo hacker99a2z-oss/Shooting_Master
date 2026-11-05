@@ -511,18 +511,23 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram server-side reward verification is not configured. Please contact support."},503);
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        if(Number(p.extra_plays)>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
-        if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>Date.now())throw new Error("Next ad unlocks soon — please wait");
         const now=Date.now();
+        const extraPlays=Number(p.extra_plays);
+        const adReadyAt=p.ad_ready_at==null?0:Number(p.ad_ready_at);
+        console.info("[AdsGram] ad start eligibility", { extraPlays, adReadyAt, maxExtraPlays:MAX_EXTRA_PLAYS, rewardSecretConfigured:Boolean(env.ADSGRAM_REWARD_SECRET) });
+        if(extraPlays>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
+        if(adReadyAt>now)throw new Error("Next ad unlocks soon — please wait");
         await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
         const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,now]});
         // Reserve a maximum of MAX_EXTRA_PLAYS across verified plays plus in-flight
         // ad sessions. A missing/delayed postback must not hard-lock the next ad after one view.
         const pendingCount=Number(pending.rows[0]?.total??0);
-        if(Number(p.extra_plays)+pendingCount>=MAX_EXTRA_PLAYS)
+        console.info("[AdsGram] ad start pending sessions", { extraPlays, pendingCount, maxExtraPlays:MAX_EXTRA_PLAYS });
+        if(extraPlays+pendingCount>=MAX_EXTRA_PLAYS)
           throw new Error("You have reached the maximum number of pending or verified extra plays. Please wait for server confirmation.");
         const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
+        console.info("[AdsGram] ad session created", { expiresAt });
         return {adSessionId,expiresAt};
       });
       return json(result);
@@ -636,8 +641,9 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     return json({error:"Not found"},404);
   }catch(e){
-    console.error("API error",path,e);const message=e instanceof Error?e.message:"Request failed";
-    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active/i.test(message);
+    const message=e instanceof Error?e.message:String(e);
+    console.error("[API error]", { path, name:e instanceof Error?e.name:"UnknownError", message, stack:e instanceof Error?e.stack:undefined });
+    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active|waiting for server confirmation/i.test(message);
     return json({error:message},conflict?409:400);
   }finally{db.close();}
 }
