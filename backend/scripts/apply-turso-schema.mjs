@@ -24,9 +24,13 @@ if (!url || !authToken) {
 
 const db = createClient({ url, authToken });
 try {
-  const sql = await readFile(new URL("../migrations/0001_initial.sql", import.meta.url), "utf8");
-  await db.executeMultiple(sql);
+  const initialSql = await readFile(new URL("../migrations/0001_initial.sql", import.meta.url), "utf8");
+  await db.executeMultiple(initialSql);
   console.log("Turso schema migration 0001 applied.");
+
+  const referralIndexSql = await readFile(new URL("../migrations/0002_referral_index.sql", import.meta.url), "utf8");
+  await db.executeMultiple(referralIndexSql);
+  console.log("Turso schema migration 0002 applied.");
 } finally {
   db.close();
 }
