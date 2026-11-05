@@ -133,7 +133,8 @@ const TRANSFER_ABI=[{
 
 class PayoutSafetyError extends Error {}
 function payoutConfigured(env:Env){
-  return env.PAYOUT_ENABLED==="true"&&Boolean(env.PAYOUT_PRIVATE_KEY)&&Boolean(env.BSC_RPC_URL);
+  if(env.PAYOUT_ENABLED!=="true"||!/^0x[0-9a-fA-F]{64}$/.test(env.PAYOUT_PRIVATE_KEY||""))return false;
+  try{return new URL(env.BSC_RPC_URL||"").protocol==="https:";}catch{return false;}
 }
 function makePayoutClients(env:Env){
   if(!payoutConfigured(env))throw new PayoutSafetyError("Automatic payout is not configured; request requires manual review.");
@@ -524,7 +525,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         let withinDailyLimit=false;
         if(automatic){
           const daily=await tx.execute({
-            sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid')",
+            sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid','payout_failed_review')",
             args:[createdAt.slice(0,10)]
           });
           withinDailyLimit=Number(daily.rows[0]?.total??0)+usd<=AUTO_PAYOUT_DAILY_MAX_USD;
