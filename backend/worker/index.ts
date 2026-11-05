@@ -1,4 +1,16 @@
 import { createClient } from "@libsql/client/web";
+import {
+  createPublicClient,
+  createWalletClient,
+  encodeFunctionData,
+  http,
+  keccak256,
+  parseEventLogs,
+  parseUnits,
+  type Hex,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { bsc } from "viem/chains";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -10,6 +22,9 @@ interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   OFFICIAL_CHANNEL_URL?: string;
   OFFICIAL_GROUP_URL?: string;
+  PAYOUT_ENABLED?: string;
+  PAYOUT_PRIVATE_KEY?: string;
+  BSC_RPC_URL?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
@@ -90,6 +105,196 @@ function prize(rank:number){
 }
 function randomBonus(){return BONUS_MIN_COINS+Math.floor(Math.random()*((BONUS_MAX_COINS-BONUS_MIN_COINS)/100+1))*100;}
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
+
+const BSC_CHAIN_ID=56;
+const USDT_BEP20_CONTRACT="0x55d398326f99059fF775485246999027B3197955" as const;
+const AUTO_PAYOUT_MAX_USD=10;
+const AUTO_PAYOUT_DAILY_MAX_USD=100;
+const MAX_BSC_GAS_PRICE=20_000_000_000n;
+const MAX_BSC_GAS_LIMIT=150_000n;
+const TRANSFER_ABI=[{
+  type:"function",name:"transfer",stateMutability:"nonpayable",
+  inputs:[{name:"to",type:"address"},{name:"value",type:"uint256"}],
+  outputs:[{name:"",type:"bool"}]
+},{
+  type:"function",name:"balanceOf",stateMutability:"view",
+  inputs:[{name:"account",type:"address"}],outputs:[{name:"",type:"uint256"}]
+},{
+  type:"function",name:"decimals",stateMutability:"view",
+  inputs:[],outputs:[{name:"",type:"uint8"}]
+},{
+  type:"function",name:"symbol",stateMutability:"view",
+  inputs:[],outputs:[{name:"",type:"string"}]
+},{
+  type:"event",name:"Transfer",anonymous:false,
+  inputs:[{name:"from",type:"address",indexed:true},{name:"to",type:"address",indexed:true},{name:"value",type:"uint256",indexed:false}]
+}] as const;
+
+class PayoutSafetyError extends Error {}
+function payoutConfigured(env:Env){
+  return env.PAYOUT_ENABLED==="true"&&Boolean(env.PAYOUT_PRIVATE_KEY)&&Boolean(env.BSC_RPC_URL);
+}
+function makePayoutClients(env:Env){
+  if(!payoutConfigured(env))throw new PayoutSafetyError("Automatic payout is not configured; request requires manual review.");
+  if(!/^0x[0-9a-fA-F]{64}$/.test(env.PAYOUT_PRIVATE_KEY!))throw new PayoutSafetyError("Treasury signing key is invalid.");
+  let rpc:URL;
+  try{rpc=new URL(env.BSC_RPC_URL!);}catch{throw new PayoutSafetyError("BSC RPC endpoint is invalid.");}
+  if(rpc.protocol!=="https:")throw new PayoutSafetyError("BSC RPC endpoint must use HTTPS.");
+  const account=privateKeyToAccount(env.PAYOUT_PRIVATE_KEY as Hex);
+  const transport=http(rpc.toString(),{timeout:15_000,retryCount:1});
+  return {
+    account,
+    publicClient:createPublicClient({chain:bsc,transport}),
+    walletClient:createWalletClient({account,chain:bsc,transport}),
+  };
+}
+function amountForUsd(usd:number){
+  if(!Number.isFinite(usd)||usd<0.02||usd>AUTO_PAYOUT_MAX_USD)throw new PayoutSafetyError("Amount is outside the automatic payout limit.");
+  return parseUnits(usd.toFixed(2),18);
+}
+async function writePayoutEvent(db:any,id:string,eventType:string,payload:Row){
+  await db.execute({
+    sql:"INSERT OR IGNORE INTO payout_events (withdrawal_id,event_type,payload,created_at) VALUES (?,?,?,?)",
+    args:[id,eventType,JSON.stringify(payload),new Date().toISOString()]
+  });
+}
+async function setPayoutForReview(db:any,id:string,reason:string){
+  const at=new Date().toISOString();
+  const safeReason=reason.slice(0,500);
+  await db.execute({
+    sql:"UPDATE withdrawals SET status='payout_failed_review',payout_error=?,payout_updated_at=? WHERE id=? AND status IN ('pending_auto','processing')",
+    args:[safeReason,at,id]
+  });
+  await writePayoutEvent(db,id,"failed_review",{reason:safeReason,at});
+}
+async function markPayoutPaid(db:any,id:string,txHash:string){
+  const at=new Date().toISOString();
+  const updated=await db.execute({
+    sql:"UPDATE withdrawals SET status='paid',payout_tx_hash=?,payout_error=NULL,payout_updated_at=?,payout_paid_at=? WHERE id=? AND status='processing'",
+    args:[txHash,at,at,id]
+  });
+  if(updated.rowsAffected===1)await writePayoutEvent(db,id,"paid",{txHash,at,network:"BEP20",asset:"USDT"});
+}
+async function confirmPayoutReceipt(db:any,id:string,txHash:string,receipt:any,from:string,to:string,amount:bigint){
+  if(receipt.status!=="success"){
+    await setPayoutForReview(db,id,"The BNB Smart Chain transaction reverted. Treasury review is required.");
+    return;
+  }
+  const transfers=parseEventLogs({abi:TRANSFER_ABI,eventName:"Transfer",logs:receipt.logs,strict:true});
+  const transfer=transfers.some((log:any)=>
+    String(log.args.from).toLowerCase()===from.toLowerCase()&&
+    String(log.args.to).toLowerCase()===to.toLowerCase()&&
+    log.args.value===amount
+  );
+  if(!transfer){
+    await setPayoutForReview(db,id,"Transaction receipt did not contain the exact USDT transfer event. Treasury review is required.");
+    return;
+  }
+  await markPayoutPaid(db,id,txHash);
+}
+function isReceiptNotFound(error:unknown){
+  const message=error instanceof Error?error.message:String(error);
+  return /receipt not found|transaction hash not found|could not be found|unknown transaction/i.test(message);
+}
+async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
+  if(p.asset!=="USDT"||p.network!=="BEP20")throw new PayoutSafetyError("Unsupported payout asset or network.");
+  if(!/^0x[a-fA-F0-9]{40}$/.test(p.wallet))throw new PayoutSafetyError("Invalid payout recipient address.");
+  const selected=await db.execute({
+    sql:"SELECT id,tg_id,usd,wallet,status,payout_asset,payout_network,payout_tx_hash,payout_raw_tx FROM withdrawals WHERE id=? LIMIT 1",
+    args:[p.withdrawalId]
+  });
+  const row=selected.rows[0] as Row|undefined;
+  if(!row)throw new PayoutSafetyError("Withdrawal record does not exist.");
+  if(String(row.status)==="paid")return;
+  if(!["pending_auto","processing"].includes(String(row.status)))return;
+  if(String(row.wallet).toLowerCase()!==p.wallet.toLowerCase()||Number(row.tg_id)!==p.tgId||
+     String(row.payout_asset)!=="USDT"||String(row.payout_network)!=="BEP20"||
+     Number(row.usd)!==Number(p.usd))throw new PayoutSafetyError("Queue payload does not match the stored withdrawal.");
+  const amount=amountForUsd(Number(row.usd));
+  const {account,publicClient,walletClient}=makePayoutClients(env);
+  const chainId=await publicClient.getChainId();
+  if(chainId!==BSC_CHAIN_ID)throw new PayoutSafetyError("Configured RPC is not BNB Smart Chain mainnet.");
+  const token=USDT_BEP20_CONTRACT;
+  const [symbol,decimals]=await Promise.all([
+    publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"symbol"}),
+    publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"decimals"})
+  ]);
+  if(symbol!=="USDT"||Number(decimals)!==18)throw new PayoutSafetyError("Configured BSC token does not match the expected USDT contract and 18 decimals.");
+
+  const recipient=p.wallet as \`0x\${string}\`;
+  let txHash=typeof row.payout_tx_hash==="string"?row.payout_tx_hash:"";
+  let rawTx=typeof row.payout_raw_tx==="string"?row.payout_raw_tx as Hex:"";
+
+  if(txHash){
+    try{
+      const receipt=await publicClient.getTransactionReceipt({hash:txHash as Hex});
+      await confirmPayoutReceipt(db,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
+      return;
+    }catch(error){
+      if(!isReceiptNotFound(error))throw error;
+    }
+  }
+
+  if(!rawTx){
+    if(String(row.status)==="processing") {
+      const age=Date.now()-Date.parse(String(row.payout_updated_at||""));
+      if(Number.isFinite(age)&&age<30_000)throw new Error("A payout signing attempt is already in progress.");
+    }
+    const [tokenBalance,gasBalance,gasPrice,nonce]=await Promise.all([
+      publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"balanceOf",args:[account.address]}),
+      publicClient.getBalance({address:account.address}),
+      publicClient.getGasPrice(),
+      publicClient.getTransactionCount({address:account.address,blockTag:"pending"})
+    ]);
+    if(tokenBalance<amount)throw new PayoutSafetyError("Treasury USDT balance is insufficient for this payout.");
+    if(gasPrice>MAX_BSC_GAS_PRICE)throw new PayoutSafetyError("BNB gas price is above the automatic payout safety limit.");
+    const data=encodeFunctionData({abi:TRANSFER_ABI,functionName:"transfer",args:[recipient,amount]});
+    const estimate=await publicClient.estimateGas({account:account.address,to:token,data});
+    const gas=estimate*120n/100n;
+    if(gas>MAX_BSC_GAS_LIMIT)throw new PayoutSafetyError("Estimated gas exceeds the automatic payout safety limit.");
+    if(gasBalance<gas*gasPrice*2n)throw new PayoutSafetyError("Treasury BNB balance is too low; keep at least twice the estimated fee for gas.");
+    rawTx=await walletClient.signTransaction({account,chain:bsc,to:token,data,gas,gasPrice,nonce});
+    txHash=keccak256(rawTx);
+    const now=new Date().toISOString();
+    const saved=await db.execute({
+      sql:"UPDATE withdrawals SET status='processing',payout_raw_tx=?,payout_tx_hash=?,payout_nonce=?,payout_attempts=payout_attempts+1,payout_error=NULL,payout_updated_at=? WHERE id=? AND payout_raw_tx IS NULL AND status IN ('pending_auto','processing')",
+      args:[rawTx,txHash,nonce,now,p.withdrawalId]
+    });
+    if(saved.rowsAffected!==1){
+      const latest=await db.execute({sql:"SELECT payout_raw_tx,payout_tx_hash FROM withdrawals WHERE id=? LIMIT 1",args:[p.withdrawalId]});
+      const existing=latest.rows[0] as Row|undefined;
+      if(!existing?.payout_raw_tx||!existing?.payout_tx_hash)throw new Error("Could not persist the signed payout transaction safely.");
+      rawTx=String(existing.payout_raw_tx) as Hex;
+      txHash=String(existing.payout_tx_hash);
+    }else{
+      await writePayoutEvent(db,p.withdrawalId,"signed",{txHash,nonce,asset:"USDT",network:"BEP20",treasury:account.address});
+    }
+  }
+
+  try{
+    await publicClient.sendRawTransaction({serializedTransaction:rawTx});
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+    if(!/already known|known transaction|already imported/i.test(message))throw error;
+  }
+  await db.execute({
+    sql:"UPDATE withdrawals SET payout_updated_at=? WHERE id=? AND status='processing'",
+    args:[new Date().toISOString(),p.withdrawalId]
+  });
+  await writePayoutEvent(db,p.withdrawalId,"broadcast",{txHash,network:"BEP20",asset:"USDT"});
+  try{
+    const receipt=await publicClient.waitForTransactionReceipt({hash:txHash as Hex,confirmations:1,timeout:45_000});
+    await confirmPayoutReceipt(db,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
+  }catch(error){
+    const message=error instanceof Error?error.message:String(error);
+    if(!/timed out|timeout/i.test(message))throw error;
+    // A pending transaction is left in processing; the scheduled recovery checks this same hash.
+    await db.execute({
+      sql:"UPDATE withdrawals SET payout_updated_at=? WHERE id=? AND status='processing'",
+      args:[new Date().toISOString(),p.withdrawalId]
+    });
+  }
+}
 
 type StartKeyboardButton={text:string;url?:string;web_app?:{url:string}};
 function telegramLink(value?:string):string|null{
@@ -303,7 +508,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json({list:rows.rows.map((r:any,i:number)=>({rank:i+1,tgId:Number(r.tg_id),name:String(r.first_name),username:r.username==null?null:String(r.username),coins:Number(r.season_coins),prize:prize(i+1),isMe:Number(r.tg_id)===user.id})),seasonEndsAt:(sid+1)*SEASON_MS});
     }
     if(path==="/api/withdrawals"){
-      const rows=await db.execute({sql:"SELECT id,coins,usd,wallet,status,created_at FROM withdrawals WHERE tg_id=? ORDER BY created_at DESC LIMIT 50",args:[user.id]});
+      const rows=await db.execute({sql:"SELECT id,coins,usd,wallet,status,created_at,payout_tx_hash,payout_asset,payout_network,payout_error FROM withdrawals WHERE tg_id=? ORDER BY created_at DESC LIMIT 50",args:[user.id]});
       return json(rows.rows.map((r:any)=>({...r,coins:Number(r.coins),usd:Number(r.usd)})));
     }
     if(path==="/api/withdrawals/request"){
@@ -312,13 +517,36 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(body.asset!=="USDT"||body.network!=="BEP20"||!Number.isFinite(usd)||usd<0.02||!isBep20Address)
         return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
       const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
+      const automatic=payoutConfigured(env)&&usd<=AUTO_PAYOUT_MAX_USD;
+      let withinDailyLimit=false;
+      if(automatic){
+        const daily=await db.execute({
+          sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid')",
+          args:[createdAt.slice(0,10)]
+        });
+        withinDailyLimit=Number(daily.rows[0]?.total??0)+usd<=AUTO_PAYOUT_DAILY_MAX_USD;
+      }
+      const status=automatic&&withinDailyLimit?"pending_auto":"pending_review";
       await txRun(db,async(tx)=>{
         const spent=await tx.execute({sql:"UPDATE players SET coins=coins-? WHERE tg_id=? AND coins>=?",args:[coins,user.id,coins]});
         if(spent.rowsAffected!==1)throw new Error("Not enough coins");
-        await tx.execute({sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at) VALUES (?,?,?,?,?,'pending',?)",args:[withdrawalId,user.id,coins,usd,wallet,createdAt]});
+        await tx.execute({
+          sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at,payout_asset,payout_network,payout_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          args:[withdrawalId,user.id,coins,usd,wallet,status,createdAt,"USDT","BEP20",createdAt]
+        });
       });
-      if(env.PAYOUT_QUEUE)ctx.waitUntil(env.PAYOUT_QUEUE.send({withdrawalId,tgId:user.id,usd,coins,wallet,asset:"USDT",network:"BEP20",createdAt} satisfies PayoutMessage));
-      return json({ok:true,id:withdrawalId,status:"pending"});
+      if(status==="pending_auto"){
+        try{
+          await env.PAYOUT_QUEUE.send({withdrawalId,tgId:user.id,usd,coins,wallet,asset:"USDT",network:"BEP20",createdAt} satisfies PayoutMessage);
+          await writePayoutEvent(db,withdrawalId,"queued",{asset:"USDT",network:"BEP20",wallet,usd,at:createdAt});
+        }catch(error){
+          const reason=error instanceof Error?error.message:"Queue unavailable";
+          await db.execute({sql:"UPDATE withdrawals SET status='pending_review',payout_error=?,payout_updated_at=? WHERE id=? AND status='pending_auto'",args:[reason.slice(0,500),new Date().toISOString(),withdrawalId]});
+          await writePayoutEvent(db,withdrawalId,"queue_fallback",{reason:reason.slice(0,500),at:new Date().toISOString()});
+          return json({ok:true,id:withdrawalId,status:"pending_review",automatic:false});
+        }
+      }
+      return json({ok:true,id:withdrawalId,status,automatic:status==="pending_auto"});
     }
     return json({error:"Not found"},404);
   }catch(e){
@@ -335,6 +563,28 @@ function addCors(request:Request,env:Env,response:Response){
   h.set("access-control-max-age","86400");h.set("vary","Origin");
   return new Response(response.body,{status:response.status,headers:h});
 }
+async function recoverPendingPayouts(env:Env){
+  if(!payoutConfigured(env))return;
+  const db=dbFor(env);
+  try{
+    const cutoff=new Date(Date.now()-120_000).toISOString();
+    const rows=await db.execute({
+      sql:"SELECT id,tg_id,usd,coins,wallet,payout_asset,payout_network,created_at FROM withdrawals WHERE status IN ('pending_auto','processing') AND payout_updated_at<? ORDER BY created_at ASC LIMIT 20",
+      args:[cutoff]
+    });
+    for(const row of rows.rows as Row[]){
+      try{
+        await env.PAYOUT_QUEUE.send({
+          withdrawalId:String(row.id),tgId:Number(row.tg_id),usd:Number(row.usd),coins:Number(row.coins),
+          wallet:String(row.wallet),asset:String(row.payout_asset) as "USDT",network:String(row.payout_network) as "BEP20",createdAt:String(row.created_at)
+        } satisfies PayoutMessage);
+        await db.execute({sql:"UPDATE withdrawals SET payout_updated_at=? WHERE id=? AND status IN ('pending_auto','processing')",args:[new Date().toISOString(),String(row.id)]});
+        await writePayoutEvent(db,String(row.id),"requeued",{at:new Date().toISOString()});
+      }catch(error){console.error("Could not recover queued payout",row.id,error);}
+    }
+  }finally{db.close();}
+}
+
 async function cleanup(env:Env){
   const db=dbFor(env);try{
     await db.batch([
@@ -352,16 +602,24 @@ export default {
     try{return addCors(request,env,await api(request,env,ctx));}
     catch(e){console.error("Worker unavailable",e);return json({error:"Service temporarily unavailable"},503);}
   },
-  async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext){ctx.waitUntil(cleanup(env));},
+  async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext){
+    ctx.waitUntil(Promise.all([cleanup(env),recoverPendingPayouts(env)]));
+  },
   async queue(batch:MessageBatch<PayoutMessage>,env:Env){
     const db=dbFor(env);try{
       for(const message of batch.messages){
         try{
-          const p=message.body;
-          await db.execute({sql:"INSERT OR IGNORE INTO payout_events (withdrawal_id,event_type,payload,created_at) VALUES (?,'queued',?,?)",args:[p.withdrawalId,JSON.stringify(p),new Date().toISOString()]});
-          await db.execute({sql:"UPDATE withdrawals SET status='pending_review' WHERE id=? AND status='pending'",args:[p.withdrawalId]});
+          await processBep20Payout(message.body,env,db);
           message.ack();
-        }catch(e){console.error("Payout queue event failed",e);message.retry();}
+        }catch(error){
+          if(error instanceof PayoutSafetyError){
+            try{await setPayoutForReview(db,message.body.withdrawalId,error.message);message.ack();}
+            catch(dbError){console.error("Could not persist payout safety failure",dbError);message.retry({delaySeconds:60});}
+          }else{
+            console.error("Automatic BEP-20 payout attempt failed",message.body.withdrawalId,error);
+            message.retry({delaySeconds:60});
+          }
+        }
       }
     }finally{db.close();}
   }
