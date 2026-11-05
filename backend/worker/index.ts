@@ -518,16 +518,17 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
       const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
       const automatic=payoutConfigured(env)&&usd<=AUTO_PAYOUT_MAX_USD;
-      let withinDailyLimit=false;
-      if(automatic){
-        const daily=await db.execute({
-          sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid')",
-          args:[createdAt.slice(0,10)]
-        });
-        withinDailyLimit=Number(daily.rows[0]?.total??0)+usd<=AUTO_PAYOUT_DAILY_MAX_USD;
-      }
-      const status=automatic&&withinDailyLimit?"pending_auto":"pending_review";
+      let status:"pending_auto"|"pending_review"="pending_review";
       await txRun(db,async(tx)=>{
+        let withinDailyLimit=false;
+        if(automatic){
+          const daily=await tx.execute({
+            sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid')",
+            args:[createdAt.slice(0,10)]
+          });
+          withinDailyLimit=Number(daily.rows[0]?.total??0)+usd<=AUTO_PAYOUT_DAILY_MAX_USD;
+        }
+        status=automatic&&withinDailyLimit?"pending_auto":"pending_review";
         const spent=await tx.execute({sql:"UPDATE players SET coins=coins-? WHERE tg_id=? AND coins>=?",args:[coins,user.id,coins]});
         if(spent.rowsAffected!==1)throw new Error("Not enough coins");
         await tx.execute({
