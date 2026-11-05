@@ -31,6 +31,15 @@ try {
   const referralIndexSql = await readFile(new URL("../migrations/0002_referral_index.sql", import.meta.url), "utf8");
   await db.executeMultiple(referralIndexSql);
   console.log("Turso schema migration 0002 applied.");
+
+  const payoutMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=3 LIMIT 1");
+  if (!payoutMigration.rows.length) {
+    const payoutSql = await readFile(new URL("../migrations/0003_secure_usdt_payouts.sql", import.meta.url), "utf8");
+    await db.executeMultiple(payoutSql);
+    console.log("Turso schema migration 0003 applied.");
+  } else {
+    console.log("Turso schema migration 0003 already applied.");
+  }
 } finally {
   db.close();
 }
