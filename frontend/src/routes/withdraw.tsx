@@ -209,7 +209,7 @@ function Withdraw() {
 
     setBusy(true);
     try {
-      await requestWithdraw({ ...auth(), usd: amount, wallet: walletAddress });
+      await requestWithdraw({ ...auth(), usd: amount, wallet: walletAddress, asset: "USDT", network: "BEP20" });
       haptic("success");
       toast.success("Withdrawal request submitted for review.");
       refetch();
@@ -255,7 +255,7 @@ function Withdraw() {
 
       <section className="mt-4 space-y-3 rounded-3xl border bg-card p-4 shadow-card">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xl">Withdraw to Trust Wallet</h2>
+          <h2 className="text-xl">Withdraw USDT to Trust Wallet</h2>
           <button
             type="button"
             onClick={connectTrustWallet}
@@ -292,7 +292,7 @@ function Withdraw() {
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Your connected wallet address will be used automatically. Withdrawal requests are reviewed manually before payment.
+          Payout asset: USDT · Network: BNB Smart Chain (BEP-20). Your connected wallet address is used automatically. Requests are reviewed manually before payment.
         </p>
         <button
           onClick={submit}
