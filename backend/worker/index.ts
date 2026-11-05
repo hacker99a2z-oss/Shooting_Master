@@ -18,7 +18,7 @@ const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
-type PayoutMessage={withdrawalId:string;tgId:number;usd:number;coins:number;wallet:string;createdAt:string};
+type PayoutMessage={withdrawalId:string;tgId:number;usd:number;coins:number;wallet:string;asset:"USDT";network:"BEP20";createdAt:string};
 
 function json(data:unknown,status=200,headers:HeadersInit={}) {
   return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...headers}});
@@ -308,14 +308,16 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     if(path==="/api/withdrawals/request"){
       const usd=Math.floor(Number(body.usd)*100)/100,wallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
-      if(!Number.isFinite(usd)||usd<0.02||!walletValid(wallet))return json({error:"Enter a valid wallet address and amount of at least $0.02"},400);
+      const isBep20Address=/^0x[a-fA-F0-9]{40}$/.test(wallet);
+      if(body.asset!=="USDT"||body.network!=="BEP20"||!Number.isFinite(usd)||usd<0.02||!isBep20Address)
+        return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
       const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
       await txRun(db,async(tx)=>{
         const spent=await tx.execute({sql:"UPDATE players SET coins=coins-? WHERE tg_id=? AND coins>=?",args:[coins,user.id,coins]});
         if(spent.rowsAffected!==1)throw new Error("Not enough coins");
         await tx.execute({sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at) VALUES (?,?,?,?,?,'pending',?)",args:[withdrawalId,user.id,coins,usd,wallet,createdAt]});
       });
-      if(env.PAYOUT_QUEUE)ctx.waitUntil(env.PAYOUT_QUEUE.send({withdrawalId,tgId:user.id,usd,coins,wallet,createdAt} satisfies PayoutMessage));
+      if(env.PAYOUT_QUEUE)ctx.waitUntil(env.PAYOUT_QUEUE.send({withdrawalId,tgId:user.id,usd,coins,wallet,asset:"USDT",network:"BEP20",createdAt} satisfies PayoutMessage));
       return json({ok:true,id:withdrawalId,status:"pending"});
     }
     return json({error:"Not found"},404);
