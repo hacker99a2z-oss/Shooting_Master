@@ -62,7 +62,7 @@ function Leaderboard() {
             ))}
           </div>
           <p className="mt-2 flex items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-secondary py-2 text-xs text-muted-foreground">
-            <Info className="h-3.5 w-3.5 text-primary" /> Earn <b className="text-foreground">{LEADERBOARD_MIN_COINS} coins</b> to join this round
+            <Info className="h-3.5 w-3.5 text-primary" /> Play at least <b className="text-foreground">1 game</b> to join this round
           </p>
         </div>
       </section>
@@ -94,7 +94,7 @@ function Leaderboard() {
         {data && list.length === 0 && (
           <div className="rounded-3xl border bg-card p-6 text-center text-sm text-muted-foreground">
             <Crown className="mx-auto mb-2 h-10 w-10 text-primary" />
-            No one has {LEADERBOARD_MIN_COINS} coins yet this round. Be the first!
+            No one has played a game yet this round. Be the first!
           </div>
         )}
         {rest.map((r) => (
