@@ -209,9 +209,9 @@ function Withdraw() {
 
     setBusy(true);
     try {
-      await requestWithdraw({ ...auth(), usd: amount, wallet: walletAddress, asset: "USDT", network: "BEP20" });
+      const result = await requestWithdraw({ ...auth(), usd: amount, wallet: walletAddress, asset: "USDT", network: "BEP20" });
       haptic("success");
-      toast.success("Withdrawal request submitted for review.");
+      toast.success(result.automatic ? "USDT payout queued for automatic BEP-20 transfer." : "Withdrawal request sent for manual review.");
       refetch();
       qc.invalidateQueries({ queryKey: ["withdrawals"] });
     } catch (e: any) {
@@ -292,7 +292,7 @@ function Withdraw() {
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Payout asset: USDT · Network: BNB Smart Chain (BEP-20). Your connected wallet address is used automatically. Requests are reviewed manually before payment.
+          Payout asset: USDT · Network: BNB Smart Chain (BEP-20). Your connected wallet is used automatically. Eligible requests are paid automatically when enabled; requests outside payout limits go to review.
         </p>
         <button
           onClick={submit}
@@ -317,13 +317,14 @@ function Withdraw() {
         {!history?.length && <p className="rounded-2xl border bg-card p-4 text-center text-sm text-muted-foreground">No withdrawals yet</p>}
         <div className="space-y-2">
           {history?.map((h) => (
-            <div key={h.id} className="flex items-center justify-between rounded-2xl border bg-card p-3 shadow-card">
-              <div>
+            <div key={h.id} className="flex items-center justify-between gap-2 rounded-2xl border bg-card p-3 shadow-card">
+              <div className="min-w-0">
                 <p className="font-display text-lg">${h.usd.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()} · {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}</p>
+                {h.payout_tx_hash && <a href={"https://bscscan.com/tx/" + h.payout_tx_hash} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary underline">View BEP-20 transaction</a>}
               </div>
-              <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${h.status === "paid" ? "bg-success text-primary-foreground" : h.status === "rejected" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground"}`}>
-                {h.status}
+              <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium capitalize ${h.status === "paid" ? "bg-success text-primary-foreground" : h.status === "rejected" || h.status === "payout_failed_review" ? "bg-destructive text-destructive-foreground" : "bg-muted text-muted-foreground"}`}>
+                {h.status === "pending_auto" || h.status === "processing" ? "processing" : h.status === "payout_failed_review" ? "needs review" : h.status}
               </span>
             </div>
           ))}
