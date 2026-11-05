@@ -18,6 +18,6 @@ export const cancelAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus 
 export const claimDailyBonus=(data:Auth)=>post<Player & {bonus:number}>("bonus/claim",data);
 export type LeaderboardRow={rank:number;tgId:number;name:string;username:string|null;coins:number;prize:number;isMe:boolean};
 export const getLeaderboard=(data:Auth)=>post<{list:LeaderboardRow[];seasonEndsAt:number}>("leaderboard",data);
-export const requestWithdraw=(data:Auth & {usd:number;wallet:string;asset:"USDT";network:"BEP20"})=>post<{ok:boolean}>("withdrawals/request",data);
-export type Withdrawal={id:string;coins:number;usd:number;wallet:string;status:string;created_at:string};
+export const requestWithdraw=(data:Auth & {usd:number;wallet:string;asset:"USDT";network:"BEP20"})=>post<{ok:boolean;id:string;status:string;automatic:boolean}>("withdrawals/request",data);
+export type Withdrawal={id:string;coins:number;usd:number;wallet:string;status:string;created_at:string;payout_tx_hash?:string|null;payout_asset?:string|null;payout_network?:string|null;payout_error?:string|null};
 export const getWithdrawals=(data:Auth)=>post<Withdrawal[]>("withdrawals",data);
