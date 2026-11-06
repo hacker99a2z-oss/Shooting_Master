@@ -1,70 +1,74 @@
-# Shooting Master — Render backend migration
+# Shooting Master — Render Free backend setup
 
 ## Target architecture
 
 - Cloudflare Pages continues to host the static React/Vite frontend.
-- Render Web Service `shooting-master-api` hosts the Node.js HTTP API.
-- Render Background Worker `shooting-master-payout-worker` consumes the durable payout queue and runs cleanup/recovery every five minutes.
-- Turso remains the source-of-truth database. Migration 0005 adds a durable payout-job table; the queue does not require Redis or Render Key Value.
+- One Render **Free Web Service** hosts the Node.js API.
+- The API process also drains the Turso-backed payout queue when it is awake.
+- Turso remains the persistent source of truth for player data, withdrawals, queue jobs, and payout leases.
 
-The existing application/game logic and BEP-20 payout implementation remain in `backend/worker/index.ts`. The Render adapters invoke that shared logic under Node.js 22.
+There is deliberately no Render Background Worker or Cron Job in the Free configuration because those service types do not have Free compute plans. The existing game/authentication and BEP-20 payout implementation is reused from `backend/worker/index.ts`, behind a Node.js HTTP adapter.
 
-## Render services
+## Free plan and monthly usage
 
-The root `render.yaml` defines two Starter services in Singapore:
+The root `render.yaml` creates one service only:
 
-| Service | Purpose | Initial plan |
-| --- | --- | --- |
-| `shooting-master-api` | HTTP API, Telegram webhook, AdsGram reward callback | Starter |
-| `shooting-master-payout-worker` | Sequential payout queue consumer and five-minute maintenance/recovery | Starter |
+| Service | Type | Compute plan | Monthly compute price |
+| --- | --- | --- | ---: |
+| `shooting-master-api` | Web Service | Free | $0 |
 
-The currently published Render Starter compute price is $7/month per continuously running service, so the initial compute estimate is about $14/month before applicable taxes/usage. Plans can be upgraded after load testing. This is not a guarantee that the app supports 50–60k daily active users; test peak concurrency, Turso usage, API latency, and queue throughput before a large launch.
+Render provides 750 free instance hours per workspace per calendar month. One service running continuously for a 31-day month uses 744 hours; naturally sleeping during idle periods uses fewer. The 750-hour allowance is shared with other Free services in the same workspace, so check the Render Dashboard's Monthly Included Usage. Do not add an external keep-alive monitor: it is unnecessary for this setup and prevents normal idle spin-down.
 
-## Initial setup and secrets
+Render Free web services sleep after 15 minutes without inbound HTTP/WebSocket traffic and take about one minute to wake on the next request. They can restart at any time, have 512 MB RAM / 0.1 CPU, and cannot scale beyond one instance or run attached persistent disks. Free compute is intended for hobby/testing use, not production. It is not a guarantee of 50–60k DAU capacity.
 
-1. Create a Render Blueprint from this repository's `render.yaml` in the intended Render workspace.
-2. In the `shooting-master-api` Environment page, set:
+Because the service sleeps, payout processing is best-effort and may pause while there is no inbound traffic. A withdrawal request schedules processing immediately while the API is awake; subsequent retries and stale-job recovery happen on later traffic/startup. Do not promise instant or fixed-time auto payouts on Free. Move to a paid Web Service plus a separate Background Worker/Cron arrangement when usage or payout reliability requires it.
+
+## Blueprint and environment setup
+
+1. In Render, create a Blueprint from this repository's root `render.yaml`.
+2. Choose the **Free** compute plan for `shooting-master-api`.
+3. Set these environment variables on the web service:
    - `TURSO_DATABASE_URL`
    - `TURSO_AUTH_TOKEN`
    - `TELEGRAM_BOT_TOKEN`
    - `ADSGRAM_REWARD_SECRET`
    - `APP_ORIGIN=https://shooting-master.pages.dev`
-   - `PAYOUT_ENABLED=false`
-3. In the `shooting-master-payout-worker` Environment page, set:
-   - `TURSO_DATABASE_URL`
-   - `TURSO_AUTH_TOKEN`
-   - `APP_ORIGIN=https://shooting-master.pages.dev`
-   - `PAYOUT_ENABLED=false`
-4. Keep the existing Cloudflare Worker and Pages active while validating Render. The Render API's health endpoint is `/health`.
-5. The API registers the Telegram bot webhook to its own Render URL at startup using Render's `RENDER_EXTERNAL_URL` variable.
-6. The new backend applies existing migrations 0001–0004 and then idempotently applies migration 0005 before the API service starts.
+   - `PAYOUT_ENABLED=false` (keep automatic signing disabled until cutover and testing)
+   - `TELEGRAM_WEBHOOK_ENABLED=false` (keep the existing Cloudflare webhook until Render has passed smoke tests)
+4. The start command applies existing Turso migrations and then idempotently applies migration 0005 before starting the API.
+5. Confirm `/health` responds at the exact service URL shown by Render.
 
-Never paste wallet keys, bot tokens, Turso credentials, or AdsGram secrets into GitHub source files or chat. Set them only in Render's Environment dashboard.
+Do not put secrets into GitHub source, a frontend `VITE_*` variable, or this document. Add secrets only in Render's Environment page.
 
-## Frontend cutover
+## Frontend and Telegram cutover
 
-After the Render API responds successfully at `https://shooting-master-api.onrender.com/health`:
+Keep the existing Cloudflare Worker active during the Render smoke-test phase. When Render is healthy:
 
-1. Set the GitHub Actions repository variable `VITE_API_BASE_URL` to the exact Render API URL.
-2. Change the GitHub Pages deployment workflow to stop deploying the Cloudflare Worker and build the Pages frontend with `VITE_API_BASE_URL`.
-3. Deploy Pages and verify game loading, Telegram authentication, AdsGram callback, leaderboard, and withdrawal history.
-4. Update the AdsGram Reward URL to the Render API:
-   `https://shooting-master-api.onrender.com/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
-5. The API re-registers the Telegram webhook to Render automatically. Verify `/start` in a private Telegram chat.
+1. Set GitHub Actions repository variable `VITE_API_BASE_URL` to the exact Render service URL shown in the Dashboard.
+2. Update the frontend build workflow to use that value and stop deploying/registering the Cloudflare API Worker.
+3. Deploy Cloudflare Pages and verify Telegram authentication, game start/finish, AdsGram reward callback, leaderboard, withdrawals, and CORS.
+4. Change AdsGram Reward URL to:
+   `https://YOUR-RENDER-SERVICE.onrender.com/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
+5. Once the app and AdsGram callback are confirmed on Render, set `TELEGRAM_WEBHOOK_ENABLED=true` on the Render service and verify a private Telegram `/start` message.
 
-If Render assigns a different hostname, use the exact service URL shown in the Render Dashboard rather than assuming the example URL above.
+Use the exact Render hostname from the dashboard; do not assume the example hostname.
 
-## Automatic payout cutover
+## Automatic BEP-20 payout safety
 
-Automatic payout remains disabled in the Render Blueprint by default. Do not enable it until the old Cloudflare payout queue has been drained or deliberately paused and its Cron Trigger/Queue consumer can no longer submit transfers. This prevents two independent consumers from competing for the same BNB Smart Chain treasury nonce.
+Automatic payout remains disabled by default. Do not enable it until the Render queue has been tested with a small test payout and the previous Cloudflare Queue consumer / cron trigger can no longer submit transfers. Never run two independent queue consumers against the same BNB Smart Chain treasury.
 
-When ready, set the following on **both** Render services:
-- `PAYOUT_ENABLED=true`
-- `PAYOUT_PRIVATE_KEY` — dedicated BSC treasury signing key
-- `BSC_RPC_URL` — trusted HTTPS BNB Smart Chain RPC endpoint
+For an explicitly approved payout cutover, add these secrets to the Render service:
+- `PAYOUT_PRIVATE_KEY` — dedicated BNB Smart Chain treasury key.
+- `BSC_RPC_URL` — trusted HTTPS BNB Smart Chain RPC endpoint.
 
-The web service uses these values to decide whether a new withdrawal can be queued; the background worker uses them to sign and send. Keep the worker at one instance because the treasury uses sequential account nonces. The Render queue has a lease, bounded retries, and a dead-job path that moves withdrawals to manual review after repeated failures.
+Then explicitly set `PAYOUT_ENABLED=true` only after the Cloudflare payout queue is drained/paused, transaction history has been reconciled, and the service is tested. Keep the service to one instance and retain the global Turso treasury lease, sequential processing, persisted signed transaction, receipt/Transfer-event verification, bounded retry and manual-review fallback. Never use the treasury wallet for unrelated transactions while automation is active.
 
-## Important repository note
+## Upgrade path
 
-The old `backend/worker/wrangler.toml` and current Cloudflare deployment workflow still describe the previous Worker deployment. Do not remove or disable that deployment until the Render Blueprint has been approved, services are healthy, Pages has been switched to the Render URL, and old payout work has been reconciled. The final workflow cutover is a separate step after Render service creation.
+When the app outgrows Free or needs more dependable background processing:
+- upgrade the API Web Service to an appropriate paid compute plan;
+- add a separately paid Render Background Worker for queue consumption;
+- optionally add a Cron Job or scheduler for recovery independent of user traffic;
+- load-test and tune Turso/Worker concurrency before adding multiple API instances.
+
+Free plan use does not establish that the app is ready for 50–60k daily active users; that requires measured load testing.
