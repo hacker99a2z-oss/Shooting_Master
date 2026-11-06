@@ -160,7 +160,7 @@ jobs:
       - name: Build Pages frontend
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: ${{ steps.worker.outputs.url }}
+          VITE_API_BASE_URL: https://shooting-master-api-5ao3.onrender.com
           VITE_TELEGRAM_BOT_USERNAME: ${{ steps.telegram.outputs.username }}
           VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
           VITE_SUPPORT_URL: ${{ vars.VITE_SUPPORT_URL }}
@@ -177,13 +177,14 @@ jobs:
       - name: Deploy Pages
         working-directory: backend
         run: npx wrangler pages deploy ../frontend/dist --project-name shooting-master --branch main --commit-hash "$GITHUB_SHA" --commit-message "Deploy $GITHUB_SHA"
-      - name: Smoke-test Worker API
+      - name: Smoke-test Render API before/after Pages deployment
         env:
-          WORKER_URL: ${{ steps.worker.outputs.url }}
+          RENDER_API_URL: https://shooting-master-api-5ao3.onrender.com
         shell: bash
         run: |
-          BODY="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$WORKER_URL/health")"
+          set -euo pipefail
+          BODY="$(curl --fail --silent --show-error --retry 8 --retry-delay 10 --retry-all-errors --max-time 30 "$RENDER_API_URL/health")"
           printf '%s' "$BODY" | grep -Fq '"ok":true'
-          curl --fail --silent --show-error -D - -o /dev/null -H "Origin: https://shooting-master.pages.dev" "$WORKER_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 -D - -o /dev/null -H "Origin: https://shooting-master.pages.dev" "$RENDER_API_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
       - name: Smoke-test Pages homepage
         run: curl --fail --silent --show-error --retry 8 --retry-delay 3 https://shooting-master.pages.dev/ -o /dev/null
