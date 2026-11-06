@@ -8,7 +8,7 @@
   "scripts": {
     "db:migrate": "node scripts/apply-turso-schema.mjs",
     "db:import-supabase": "node scripts/import-supabase.mjs",
-    "start": "npm run db:migrate && node scripts/apply-render-queue.mjs && node --experimental-strip-types api.mjs",
+    "start": "npm run db:migrate && node scripts/apply-render-queue.mjs && node scripts/report-payout-state.mjs && node --experimental-strip-types api.mjs",
     "worker": "node --experimental-strip-types payout-worker.mjs",
     "dev": "wrangler dev --config worker/wrangler.toml",
     "deploy": "wrangler deploy --config worker/wrangler.toml",
