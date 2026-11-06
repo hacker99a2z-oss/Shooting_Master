@@ -13,6 +13,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
+import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -364,15 +365,24 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   if(request.method==="GET"&&path==="/health")return json({ok:true,service:"shooting-master-api",adsgramRewardConfigured:Boolean(env.ADSGRAM_REWARD_SECRET)});
   if(request.method==="GET"&&path==="/api/adsgram/reward"){
     const url=new URL(request.url);
-    const suppliedKey=url.searchParams.get("key")||"";
-    const rawUserId=url.searchParams.get("userid")||url.searchParams.get("userId")||"";
-    console.info("[AdsGram] Reward URL hit", { userIdPresent:Boolean(rawUserId), keyPresent:Boolean(suppliedKey) });
-    if(!env.ADSGRAM_REWARD_SECRET){
-      console.error("[AdsGram] callback rejected: Worker secret is missing");
+    const suppliedKeys=[...rawQueryValues(url.search,"key"),...rawQueryValues(url.search,"secret"),...rawQueryValues(url.search,"token")];
+    const rawUserId=(url.searchParams.get("userid")||url.searchParams.get("userId")||url.searchParams.get("user_id")||"").trim();
+    console.info("[AdsGram] Reward URL hit", { userIdPresent:Boolean(rawUserId), keyPresent:suppliedKeys.length>0 });
+    const expectedSecret=normalizeSecret(env.ADSGRAM_REWARD_SECRET);
+    if(!expectedSecret){
+      console.error("[AdsGram] callback rejected: ADSGRAM_REWARD_SECRET is missing on the server");
       return json({error:"AdsGram reward callback is not configured"},503);
     }
-    if(!equal(suppliedKey,env.ADSGRAM_REWARD_SECRET)){
-      console.error("[AdsGram] callback rejected: shared secret mismatch");
+    if(!secretMatches(suppliedKeys,expectedSecret)){
+      const supplied=suppliedKeys[0]??"";
+      console.error("[AdsGram] callback rejected: shared secret mismatch", {
+        keyPresent:suppliedKeys.length>0,
+        suppliedLength:normalizeSecret(supplied).length,
+        expectedLength:expectedSecret.length,
+        suppliedFingerprint:await secretFingerprint(supplied),
+        expectedFingerprint:await secretFingerprint(expectedSecret),
+        hint:"If lengths/fingerprints differ, the key in the AdsGram Reward URL is not the same as ADSGRAM_REWARD_SECRET on Render (check for a typo, a missing &key= or an old URL)."
+      });
       return json({error:"Unauthorized"},401);
     }
     if(!/^[0-9]{1,19}$/.test(rawUserId)){
