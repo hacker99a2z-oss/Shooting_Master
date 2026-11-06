@@ -35,81 +35,15 @@ jobs:
       - name: Install backend tools
         working-directory: backend
         run: npm install --no-audit --no-fund
-      - name: Ensure payout queues exist
-        working-directory: backend
-        shell: bash
-        run: |
-          QUEUES="$(npx wrangler queues list --config worker/wrangler.toml)"
-          if ! printf '%s' "$QUEUES" | grep -Fq 'shooting-master-payouts-dlq'; then
-            npx wrangler queues create shooting-master-payouts-dlq --config worker/wrangler.toml
-          fi
-          if ! printf '%s' "$QUEUES" | grep -Fq 'shooting-master-payouts'; then
-            npx wrangler queues create shooting-master-payouts --config worker/wrangler.toml
-          fi
       - name: Apply Turso schema
         working-directory: backend
         run: npm run db:migrate
       - name: Read-only payout queue audit
         working-directory: backend
         run: node scripts/report-payout-state.mjs
-      - name: Deploy API Worker
-        id: worker
+      - name: Disable legacy Cloudflare API Worker
         working-directory: backend
-        shell: bash
-        env:
-          OFFICIAL_CHANNEL_URL: ${{ vars.OFFICIAL_CHANNEL_URL }}
-          OFFICIAL_GROUP_URL: ${{ vars.OFFICIAL_GROUP_URL }}
-          PAYOUT_ENABLED: ${{ vars.PAYOUT_ENABLED }}
-          PAYOUT_PRIVATE_KEY: ${{ secrets.PAYOUT_PRIVATE_KEY }}
-          BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
-        run: |
-          set -o pipefail
-          # Use the configured repository variables when present; otherwise use the official links supplied for this bot.
-          OFFICIAL_CHANNEL_URL="${OFFICIAL_CHANNEL_URL:-https://t.me/shooting_master}"
-          OFFICIAL_GROUP_URL="${OFFICIAL_GROUP_URL:-https://t.me/shooting_master_group}"
-          WRANGLER_VARS=(
-            --var "OFFICIAL_CHANNEL_URL:${OFFICIAL_CHANNEL_URL}"
-            --var "OFFICIAL_GROUP_URL:${OFFICIAL_GROUP_URL}"
-          )
-          if [[ "${PAYOUT_ENABLED,,}" == "true" ]]; then
-            if [ -z "${PAYOUT_PRIVATE_KEY}" ] || [ -z "${BSC_RPC_URL}" ]; then
-              echo "::error::Automatic payouts requested, but PAYOUT_PRIVATE_KEY or BSC_RPC_URL is missing from GitHub Actions secrets."
-              exit 1
-            fi
-            WRANGLER_VARS+=(--var "PAYOUT_ENABLED:true")
-            echo "Automatic USDT payouts are enabled; signing key and RPC endpoint are supplied as secrets."
-          else
-            WRANGLER_VARS+=(--var "PAYOUT_ENABLED:false")
-            echo "Automatic payouts remain disabled; withdrawals will be routed to manual review."
-          fi
-          npx wrangler deploy --config worker/wrangler.toml "${WRANGLER_VARS[@]}" 2>&1 | tee deploy.log
-          WORKER_URL="$(grep -Eo 'https://shooting-master-api\.[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)"
-          if [ -z "$WORKER_URL" ]; then
-            echo "::error::Could not read the Worker URL from Wrangler output."
-            exit 1
-          fi
-          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Set Worker secrets
-        working-directory: backend
-        shell: bash
-        env:
-          PAYOUT_ENABLED: ${{ vars.PAYOUT_ENABLED }}
-          PAYOUT_PRIVATE_KEY: ${{ secrets.PAYOUT_PRIVATE_KEY }}
-          BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
-          ADSGRAM_REWARD_SECRET: ${{ secrets.ADSGRAM_REWARD_SECRET }}
-        run: |
-          printf '%s' "$TURSO_DATABASE_URL" | npx wrangler secret put TURSO_DATABASE_URL --config worker/wrangler.toml
-          printf '%s' "$TURSO_AUTH_TOKEN" | npx wrangler secret put TURSO_AUTH_TOKEN --config worker/wrangler.toml
-          printf '%s' "$TELEGRAM_BOT_TOKEN" | npx wrangler secret put TELEGRAM_BOT_TOKEN --config worker/wrangler.toml
-          if [ -n "${ADSGRAM_REWARD_SECRET:-}" ]; then
-            printf '%s' "$ADSGRAM_REWARD_SECRET" | npx wrangler secret put ADSGRAM_REWARD_SECRET --config worker/wrangler.toml
-            echo "AdsGram server-side reward callback secret uploaded."
-          fi
-          if [[ "${PAYOUT_ENABLED,,}" == "true" ]]; then
-            printf '%s' "$PAYOUT_PRIVATE_KEY" | npx wrangler secret put PAYOUT_PRIVATE_KEY --config worker/wrangler.toml
-            printf '%s' "$BSC_RPC_URL" | npx wrangler secret put BSC_RPC_URL --config worker/wrangler.toml
-          fi
+        run: npx wrangler deploy --config worker/wrangler.toml
       - name: Resolve Telegram bot username
         id: telegram
         shell: bash
