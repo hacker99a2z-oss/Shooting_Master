@@ -105,7 +105,8 @@ async function txRun(db:any,fn:(tx:any)=>Promise<any>){
 async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:number,kills:number){
   const used=await tx.execute({sql:"UPDATE game_sessions SET consumed_at=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[Date.now(),String(session.id),tgId]});
   if(used.rowsAffected!==1)throw new Error("Game result already submitted");
-  if(Number(session.uses_extra_play)===3)throw new Error("Legacy test game sessions are disabled. Start a new game.");
+  const sessionType=Number(session.uses_extra_play);
+  if(sessionType!==0&&sessionType!==1&&sessionType!==2)throw new Error("Invalid game session type");
   const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
   const cooldown=Number(session.uses_extra_play)>0?Date.now()+AD_COOLDOWN_MS:null;
   await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=CASE WHEN ? IS NULL THEN ad_ready_at ELSE ? END WHERE tg_id=?",
