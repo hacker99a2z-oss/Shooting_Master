@@ -27,4 +27,4 @@ services:
       - key: PAYOUT_ENABLED
         value: "false"
       - key: TELEGRAM_WEBHOOK_ENABLED
-        value: "false"
+        value: "true"
