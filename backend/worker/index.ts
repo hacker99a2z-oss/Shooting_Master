@@ -12,6 +12,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
+import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -430,6 +431,17 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   const db=dbFor(env);
   try{
     if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:"")));
+    if(path==="/api/wallet/destination"){
+      const result=await db.execute({sql:"SELECT address,asset,network,chain_id AS chainId,updated_at AS updatedAt FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
+      return json({destination:result.rows[0]??null});
+    }
+    if(path==="/api/wallet/save"){
+      const destination=destinationInput(body);
+      await ensurePlayer(db,user);
+      const updatedAt=new Date().toISOString();
+      await db.execute({sql:"INSERT INTO wallet_destinations (tg_id,address,asset,network,chain_id,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET address=excluded.address,asset=excluded.asset,network=excluded.network,chain_id=excluded.chain_id,updated_at=excluded.updated_at",args:[user.id,destination.address,destination.asset,destination.network,destination.chainId,updatedAt]});
+      return json({destination:{...destination,updatedAt}});
+    }
     if(path==="/api/game/start-ad"){
       const adSessionId=typeof body.adSessionId==="string"?body.adSessionId.slice(0,64):"";
       if(!adSessionId)return json({error:"Ad session ID is required"},400);
@@ -603,7 +615,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     if(path==="/api/withdrawals/request"){
       const usd=Math.floor(Number(body.usd)*100)/100,wallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
-      const isBep20Address=/^0x[a-fA-F0-9]{40}$/.test(wallet);
+      const isBep20Address=isBep20Destination(wallet);
       if(body.asset!=="USDT"||body.network!=="BEP20"||!Number.isFinite(usd)||usd<0.02||!isBep20Address)
         return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
       const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();

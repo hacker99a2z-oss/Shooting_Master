@@ -33,6 +33,9 @@
   --color-gold: var(--gold);
   --color-hud-blue: var(--hud-blue);
   --color-hud-orange: var(--hud-orange);
+  --color-settings-panel: var(--settings-panel);
+  --color-settings-value: var(--settings-value);
+  --color-settings-ink: var(--settings-ink);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -149,7 +152,7 @@
     content: "";
     position: fixed;
     inset: 0;
-    z-index: 0;
+    z-index: -1;
     pointer-events: none;
     background-color: var(--background);
     background-image: var(--gradient-sky);
@@ -164,7 +167,7 @@
     min-height: 100dvh;
     background: transparent;
   }
-  h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0.02em; }
+  h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0; }
   h1 { color: var(--foreground); background-image: none; }
   .bg-card { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
   button, input, textarea, select { color-scheme: dark; }
@@ -214,3 +217,10 @@
 .text-destructive { color: var(--destructive); }
 .text-destructive-foreground { color: var(--destructive-foreground); }
 .text-success { color: var(--success); }
+
+:root { --settings-panel: #308d35; --settings-value: #ffea45; --settings-ink: #f7fff1;
+  --arena-ground: #7e9290; --arena-blue: #249bdb; --arena-red: #d83e48; --arena-armor: #eff6f4; --arena-skin: #eabd8e; --arena-hair: #724c33; --arena-dark: #26333e; --arena-cover: #79916b; --arena-gold: #efcc48; --arena-sky: #91cfee; --arena-shield: #51e2fb;
+}
+.arena-three { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.sensitivity-panel { --primary: var(--settings-value); --background: var(--settings-value); --ring: var(--settings-value); background:var(--settings-panel); color:var(--settings-ink); opacity:1; z-index:70; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }

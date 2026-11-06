@@ -8,3 +8,7 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Retain Telegram-authenticated API and payout rules; saved destinations are user-scoped and separate from active wallet sessions.
+- Use Three.js only for rendering the existing Canvas simulation, with a 2D fallback when WebGL is unavailable.
+- WalletConnect is initialized only with a configured public Reown project ID; never treat a saved address as a connected wallet.

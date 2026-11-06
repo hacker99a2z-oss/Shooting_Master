@@ -1,40 +1,25 @@
 import { useEffect, useState } from "react";
-import { Crosshair, Settings, Shield } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Crosshair, Settings, Shield, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { DEFAULT_SENSITIVITY, loadSensitivity, saveSensitivity, type Sensitivity } from "@/lib/sensitivity";
 
 export function SensitivitySettings() {
   const [s, setS] = useState<Sensitivity>(DEFAULT_SENSITIVITY);
+  const [open, setOpen] = useState(false);
   useEffect(() => setS(loadSensitivity()), []);
-  const update = (k: keyof Sensitivity, v: number) => {
-    const next = { ...s, [k]: v };
-    setS(next);
-    saveSensitivity(next);
+  const update = (key: keyof Sensitivity, value: number) => {
+    const next = { ...s, [key]: value }; setS(next); saveSensitivity(next);
   };
-  const row = (k: keyof Sensitivity, label: string, icon: React.ReactNode) => (
-    <div key={k} className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 font-medium">{icon}{label}</span>
-        <span className="font-display tabular-nums text-primary">{s[k]}%</span>
-      </div>
-      <Slider min={0} max={100} step={1} value={[s[k]]} onValueChange={([v]) => update(k, v ?? 0)} aria-label={`${label} sensitivity`} />
-    </div>
-  );
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button aria-label="Settings" className="flex h-10 w-10 items-center justify-center rounded-full border bg-card text-card-foreground shadow-card active:scale-90 transition-transform">
-          <Settings className="h-5 w-5" />
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Sensitivity</DialogTitle></DialogHeader>
-        <div className="space-y-6 pt-2">
-          {row("shield", "Shield", <Shield className="h-4 w-4 text-primary" />)}
-          {row("shoot", "Shoot", <Crosshair className="h-4 w-4 text-primary" />)}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild><Button variant="outline" size="icon" aria-label="Settings" className="h-10 w-10 rounded-full shadow-card"><Settings className="h-5 w-5" /></Button></PopoverTrigger>
+    <PopoverContent side="left" align="start" sideOffset={10} collisionPadding={12} className="sensitivity-panel w-72 max-w-[calc(100vw-24px)] rounded-lg border-2 border-settings-value bg-settings-panel text-settings-ink">
+      <div className="mb-6 flex items-center justify-between"><h2 className="font-display text-xl">Sensitivity</h2><Button variant="ghost" size="icon" aria-label="Close sensitivity" onClick={() => setOpen(false)}><X /></Button></div>
+      <div className="space-y-6">{(["shoot", "shield"] as const).map(key => <div key={key} className="space-y-3">
+        <div className="flex items-center justify-between gap-3"><label htmlFor={`sensitivity-${key}`} className="flex items-center gap-2 font-semibold">{key === "shoot" ? <Crosshair className="h-4 w-4" /> : <Shield className="h-4 w-4" />}{key === "shoot" ? "Shoot" : "Shield"}</label><output className="font-display text-xl tabular-nums text-settings-value">{s[key]}%</output></div>
+        <Slider id={`sensitivity-${key}`} min={0} max={100} step={1} value={[s[key]]} onValueChange={([value])=>update(key,value ?? 0)} aria-label={`${key} sensitivity`} />
+      </div>)}</div>
+    </PopoverContent>
+  </Popover>;
 }

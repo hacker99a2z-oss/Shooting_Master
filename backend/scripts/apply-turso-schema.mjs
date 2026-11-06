@@ -49,6 +49,9 @@ try {
   } else {
     console.log("Turso schema migration 0004 already applied.");
   }
+  const walletSql = await readFile(new URL("../migrations/0006_wallet_destinations.sql", import.meta.url), "utf8");
+  await db.executeMultiple(walletSql);
+  console.log("Turso schema migration 0006 applied.");
 } finally {
   db.close();
 }

@@ -22,3 +22,7 @@ export const getLeaderboard=(data:Auth)=>post<{list:LeaderboardRow[];seasonEndsA
 export const requestWithdraw=(data:Auth & {usd:number;wallet:string;asset:"USDT";network:"BEP20"})=>post<{ok:boolean;id:string;status:string;automatic:boolean}>("withdrawals/request",data);
 export type Withdrawal={id:string;coins:number;usd:number;wallet:string;status:string;created_at:string;payout_tx_hash?:string|null;payout_asset?:string|null;payout_network?:string|null;payout_error?:string|null};
 export const getWithdrawals=(data:Auth)=>post<Withdrawal[]>("withdrawals",data);
+
+export type WalletDestination={address:string;asset:"USDT";network:"BEP20";chainId:56;updatedAt:string};
+export const getWalletDestination=(data:Auth)=>post<{destination:WalletDestination|null}>("wallet/destination",data);
+export const saveWalletDestination=(data:Auth & {address:string;asset:"USDT";network:"BEP20"})=>post<{destination:WalletDestination}>("wallet/save",data);

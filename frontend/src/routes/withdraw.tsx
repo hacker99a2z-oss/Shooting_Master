@@ -8,9 +8,11 @@ import { usePlayer } from "@/hooks/use-player";
 import { getWithdrawals, requestWithdraw } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic, webApp } from "@/lib/tg";
 import { COINS_PER_USD, MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
+import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, trustBrowserLink, validBep20Address } from "@/lib/wallet-rules";
+import { getWalletDestination, saveWalletDestination } from "@/lib/api.functions";
+import { Button } from "@/components/ui/button";
+import { connectTrustWalletSession } from "@/lib/trust-connect";
 
-const BSC_CHAIN_ID = 56;
-const BSC_CHAIN_ID_HEX = "0x38";
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
   chainName: "BNB Smart Chain",
@@ -35,8 +37,7 @@ declare global {
 
 const trustWalletProviders = new Map<string, TrustWalletProvider>();
 
-if (typeof window !== "undefined") {
-  window.addEventListener("eip6963:announceProvider", (event: Event) => {
+function collectTrustProvider(event: Event) {
     const detail = (event as CustomEvent<{
       info?: { uuid?: string; rdns?: string };
       provider?: TrustWalletProvider;
@@ -44,7 +45,6 @@ if (typeof window !== "undefined") {
     if (detail?.info?.rdns?.toLowerCase() === "com.trustwallet.app" && detail.provider) {
       trustWalletProviders.set(detail.info.uuid || "trust-wallet", detail.provider);
     }
-  });
 }
 
 function getTrustWalletProvider(): TrustWalletProvider | null {
@@ -113,6 +113,13 @@ function Withdraw() {
   const [isBscNetwork, setIsBscNetwork] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savedAddress, setSavedAddress] = useState("");
+  useEffect(() => {
+    window.addEventListener("eip6963:announceProvider", collectTrustProvider);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    getWalletDestination(auth()).then(result => setSavedAddress(result.destination?.address ?? "")).catch(() => {});
+    return () => window.removeEventListener("eip6963:announceProvider", collectTrustProvider);
+  }, []);
 
   const coins = me?.coins ?? 0;
   const balanceUsd = coinsToUsd(coins);
@@ -126,7 +133,8 @@ function Withdraw() {
     const handleAccountsChanged = (...args: unknown[]) => {
       const accounts = args[0];
       const address = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
-      setWalletAddress(/^0x[a-fA-F0-9]{40}$/.test(address) ? address : "");
+      setWalletAddress(validBep20Address(address) ? address : "");
+      if (validBep20Address(address)) setIsBscNetwork(false);
       if (!address) setIsBscNetwork(false);
     };
     const handleChainChanged = (...args: unknown[]) => {
@@ -152,11 +160,11 @@ function Withdraw() {
   const connectTrustWallet = async () => {
     setConnecting(true);
     try {
-      const provider = getTrustWalletProvider();
+      const provider = getTrustWalletProvider() ?? await connectTrustWalletSession();
       if (!provider) {
         const mobileOrTelegram = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || Boolean(webApp());
         if (mobileOrTelegram) {
-          const deepLink = "https://link.trustwallet.com/open_url?coin_id=714&url=" + encodeURIComponent(window.location.href);
+          const deepLink = trustBrowserLink(window.location.href);
           toast.info("Opening Trust Wallet. Connect after this page opens in its browser.");
           window.location.assign(deepLink);
         } else {
@@ -168,7 +176,7 @@ function Withdraw() {
 
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const firstAddress = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
-      if (!/^0x[a-fA-F0-9]{40}$/.test(firstAddress)) {
+      if (!validBep20Address(firstAddress)) {
         throw new Error("Trust Wallet did not return a valid BEP-20 address.");
       }
 
@@ -177,13 +185,19 @@ function Withdraw() {
       const activeAddress = Array.isArray(activeAccounts) && typeof activeAccounts[0] === "string"
         ? activeAccounts[0]
         : firstAddress;
-      if (!/^0x[a-fA-F0-9]{40}$/.test(activeAddress)) {
+      if (!validBep20Address(activeAddress)) {
         throw new Error("No valid wallet account is connected.");
       }
 
       setWalletProvider(provider);
       setWalletAddress(activeAddress);
       setIsBscNetwork(true);
+      try {
+        const saved = await saveWalletDestination({ ...auth(), address: activeAddress, asset: "USDT", network: "BEP20" });
+        setSavedAddress(saved.destination.address);
+      } catch (error) {
+        toast.error(error instanceof Error ? `Connected, but address was not saved: ${error.message}` : "Connected, but address was not saved.");
+      }
       haptic("success");
       toast.success("Trust Wallet connected on BEP-20.");
     } catch (error) {
@@ -276,6 +290,7 @@ function Withdraw() {
             {walletAddress && isBscNetwork ? "BNB Smart Chain · BEP-20" : walletAddress ? "Switch to BEP-20" : "BEP-20 only"}
           </span>
         </div>
+        {savedAddress && <p className="text-xs text-muted-foreground">Saved USDT BEP-20 address: <span className="break-all font-mono">{savedAddress}</span>{!walletAddress && " · Not connected"}</p>}
         <label className="block text-xs text-muted-foreground">
           Amount (USD, min ${MIN_WITHDRAW_USD})
           <input

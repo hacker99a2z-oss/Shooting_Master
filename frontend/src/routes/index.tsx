@@ -9,7 +9,8 @@ import { usePlayer } from "@/hooks/use-player";
 import { startGame, startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
-import arenaBg from "@/assets/arena-bg.jpg";
+import arenaBg from "@/assets/cartoon-arena.jpg";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -61,7 +62,7 @@ function Home() {
     try {
       const p = await finishGame({ ...auth(), gameId, score, kills });
       setPlayer(p);
-      setResult({ score, reward: p.reward, kills, pendingVerification: p.pendingVerification });
+      setResult({ score, reward: p.reward, kills, pendingVerification: Boolean(p.pendingVerification) });
       if (p.pendingVerification) toast.info("Game finished. Coins will be added automatically after AdsGram server verification.");
     } catch (e: any) {
       toast.error(e.message);
