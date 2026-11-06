@@ -42,6 +42,18 @@ export function createRenderQueue() {
         await tx.commit();
         return null;
       }
+
+      const lock = await tx.execute({
+        sql: `UPDATE render_payout_worker_lock
+          SET owner_token = ?, lease_until = ?
+          WHERE id = 'ton-wallet' AND lease_until <= ?`,
+        args: [token, now + LEASE_MS, now],
+      });
+      if (lock.rowsAffected !== 1) {
+        await tx.commit();
+        return null;
+      }
+
       const row = rows.rows[0];
       const id = String(row.id);
       const updated = await tx.execute({
@@ -54,6 +66,10 @@ export function createRenderQueue() {
         args: [token, now + LEASE_MS, id, now, now],
       });
       if (updated.rowsAffected !== 1) {
+        await tx.execute({
+          sql: "UPDATE render_payout_worker_lock SET owner_token = NULL, lease_until = 0 WHERE id = 'ton-wallet' AND owner_token = ?",
+          args: [token],
+        });
         await tx.commit();
         return null;
       }
@@ -71,30 +87,54 @@ export function createRenderQueue() {
   }
 
   async function renew(job) {
-    const result = await db.execute({
-      sql: `UPDATE render_payout_jobs SET lease_until = ?
-        WHERE id = ? AND status = 'processing' AND owner_token = ?`,
-      args: [Date.now() + LEASE_MS, job.id, job.token],
-    });
-    return result.rowsAffected === 1;
+    const now = Date.now();
+    const tx = await db.transaction("write");
+    try {
+      const jobLease = await tx.execute({
+        sql: `UPDATE render_payout_jobs SET lease_until = ?
+          WHERE id = ? AND status = 'processing' AND owner_token = ?`,
+        args: [now + LEASE_MS, job.id, job.token],
+      });
+      const walletLease = await tx.execute({
+        sql: `UPDATE render_payout_worker_lock SET lease_until = ?
+          WHERE id = 'ton-wallet' AND owner_token = ?`,
+        args: [now + LEASE_MS, job.token],
+      });
+      await tx.commit();
+      return jobLease.rowsAffected === 1 && walletLease.rowsAffected === 1;
+    } catch (error) {
+      if (!tx.closed) await tx.rollback();
+      throw error;
+    }
   }
 
   async function complete(job) {
-    await db.execute({
-      sql: `UPDATE render_payout_jobs
-        SET status = 'completed', completed_at = ?, lease_until = NULL,
-            owner_token = NULL, last_error = NULL
-        WHERE id = ? AND status = 'processing' AND owner_token = ?`,
-      args: [new Date().toISOString(), job.id, job.token],
-    });
+    const tx = await db.transaction("write");
+    try {
+      await tx.execute({
+        sql: `UPDATE render_payout_jobs
+          SET status = 'completed', completed_at = ?, lease_until = NULL,
+              owner_token = NULL, last_error = NULL
+          WHERE id = ? AND status = 'processing' AND owner_token = ?`,
+        args: [new Date().toISOString(), job.id, job.token],
+      });
+      await tx.execute({
+        sql: "UPDATE render_payout_worker_lock SET owner_token = NULL, lease_until = 0 WHERE id = 'ton-wallet' AND owner_token = ?",
+        args: [job.token],
+      });
+      await tx.commit();
+    } catch (error) {
+      if (!tx.closed) await tx.rollback();
+      throw error;
+    }
   }
 
   async function retry(job, reason) {
     const now = Date.now();
     const safeReason = String(reason || "Temporary payout processing failure").slice(0, 500);
-    if (job.attempts >= MAX_ATTEMPTS) {
-      const tx = await db.transaction("write");
-      try {
+    const tx = await db.transaction("write");
+    try {
+      if (job.attempts >= MAX_ATTEMPTS) {
         const updated = await tx.execute({
           sql: `UPDATE render_payout_jobs
             SET status = 'dead', lease_until = NULL, owner_token = NULL, last_error = ?
@@ -102,34 +142,44 @@ export function createRenderQueue() {
           args: [safeReason, job.id, job.token],
         });
         if (updated.rowsAffected === 1) {
+          const at = new Date(now).toISOString();
           await tx.execute({
             sql: `UPDATE withdrawals
               SET status = 'payout_failed_review', payout_error = ?, payout_updated_at = ?
               WHERE id = ? AND status IN ('pending_auto', 'processing')`,
-            args: [safeReason, new Date(now).toISOString(), String(job.payload.withdrawalId)],
+            args: [safeReason, at, String(job.payload.withdrawalId)],
           });
           await tx.execute({
             sql: `INSERT OR IGNORE INTO payout_events (withdrawal_id, event_type, payload, created_at)
               VALUES (?, 'failed_review', ?, ?)`,
-            args: [String(job.payload.withdrawalId), JSON.stringify({ reason: safeReason, at: new Date(now).toISOString() }), new Date(now).toISOString()],
+            args: [String(job.payload.withdrawalId), JSON.stringify({ reason: safeReason, at }), at],
           });
         }
+        await tx.execute({
+          sql: "UPDATE render_payout_worker_lock SET owner_token = NULL, lease_until = 0 WHERE id = 'ton-wallet' AND owner_token = ?",
+          args: [job.token],
+        });
         await tx.commit();
         return "dead";
-      } catch (error) {
-        if (!tx.closed) await tx.rollback();
-        throw error;
       }
-    }
 
-    const result = await db.execute({
-      sql: `UPDATE render_payout_jobs
-        SET status = 'pending', available_at = ?, lease_until = NULL,
-            owner_token = NULL, last_error = ?
-        WHERE id = ? AND status = 'processing' AND owner_token = ?`,
-      args: [now + 60_000, safeReason, job.id, job.token],
-    });
-    return result.rowsAffected === 1 ? "retry" : "lost";
+      const result = await tx.execute({
+        sql: `UPDATE render_payout_jobs
+          SET status = 'pending', available_at = ?, lease_until = NULL,
+              owner_token = NULL, last_error = ?
+          WHERE id = ? AND status = 'processing' AND owner_token = ?`,
+        args: [now + 60_000, safeReason, job.id, job.token],
+      });
+      await tx.execute({
+        sql: "UPDATE render_payout_worker_lock SET owner_token = NULL, lease_until = 0 WHERE id = 'ton-wallet' AND owner_token = ?",
+        args: [job.token],
+      });
+      await tx.commit();
+      return result.rowsAffected === 1 ? "retry" : "lost";
+    } catch (error) {
+      if (!tx.closed) await tx.rollback();
+      throw error;
+    }
   }
 
   return { send, claimNext, renew, complete, retry, close: () => db.close() };
