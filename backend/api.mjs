@@ -4,10 +4,101 @@ import cloudflareWorker from "./worker/index.ts";
 import { createRenderQueue } from "./render-queue.mjs";
 
 const queue = createRenderQueue();
+let payoutDrainRunning = false;
+let payoutDrainQueued = false;
+let maintenanceRunning = false;
+let lastMaintenanceAt = 0;
+let retryWakeTimer;
+
+async function drainPayoutQueue() {
+  if (payoutDrainRunning || process.env.PAYOUT_ENABLED !== "true") return;
+  payoutDrainRunning = true;
+  try {
+    for (let processed = 0; processed < 25; processed += 1) {
+      const job = await queue.claimNext();
+      if (!job) break;
+      let action = "ack";
+      const heartbeat = setInterval(() => {
+        void queue.renew(job).then((ok) => {
+          if (!ok) console.error("[payout] queue lease lost", job.id);
+        }).catch((error) => console.error("[payout] queue lease renewal failed", error));
+      }, 30_000);
+      heartbeat.unref();
+      try {
+        await cloudflareWorker.queue({
+          messages: [{
+            body: job.payload,
+            ack() { action = "ack"; },
+            retry() { action = "retry"; },
+          }],
+        }, env);
+        if (action === "retry") {
+          const state = await queue.retry(job, "Temporary blockchain or payout-provider failure");
+          console.warn("[payout] retry scheduled", { id: job.id, state });
+          if (state === "retry") {
+            clearTimeout(retryWakeTimer);
+            retryWakeTimer = setTimeout(schedulePayoutDrain, 60_000);
+            retryWakeTimer.unref();
+          }
+        } else {
+          await queue.complete(job);
+          console.info("[payout] job completed", job.id);
+        }
+      } catch (error) {
+        const state = await queue.retry(job, error instanceof Error ? error.message : String(error));
+        console.error("[payout] job attempt failed", { id: job.id, state, error });
+        if (state === "retry") {
+          clearTimeout(retryWakeTimer);
+          retryWakeTimer = setTimeout(schedulePayoutDrain, 60_000);
+          retryWakeTimer.unref();
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+    }
+  } catch (error) {
+    console.error("[payout] queue drain failed", error);
+  } finally {
+    payoutDrainRunning = false;
+  }
+}
+
+function schedulePayoutDrain() {
+  if (payoutDrainQueued || process.env.PAYOUT_ENABLED !== "true") return;
+  payoutDrainQueued = true;
+  setImmediate(() => {
+    payoutDrainQueued = false;
+    void drainPayoutQueue();
+  });
+}
+
+async function runMaintenance() {
+  if (maintenanceRunning || Date.now() - lastMaintenanceAt < 5 * 60_000) return;
+  maintenanceRunning = true;
+  lastMaintenanceAt = Date.now();
+  const tasks = [];
+  try {
+    await cloudflareWorker.scheduled({}, env, {
+      waitUntil(promise) { tasks.push(Promise.resolve(promise)); },
+    });
+    await Promise.all(tasks);
+    console.info("[scheduler] cleanup and stale payout recovery completed");
+  } catch (error) {
+    console.error("[scheduler] maintenance failed", error);
+  } finally {
+    maintenanceRunning = false;
+  }
+}
+
 const env = {
   ...process.env,
   APP_ORIGIN: process.env.APP_ORIGIN || "https://shooting-master.pages.dev",
-  PAYOUT_QUEUE: { send: queue.send },
+  PAYOUT_QUEUE: {
+    async send(payload) {
+      await queue.send(payload);
+      schedulePayoutDrain();
+    },
+  },
 };
 
 async function toWebRequest(request) {
@@ -73,6 +164,10 @@ async function handle(request, response) {
       return;
     }
     response.end(Buffer.from(await webResponse.arrayBuffer()));
+    // Free Render has no Background Worker or Cron service. Run bounded queue and
+    // maintenance work only while this single free Web Service is awake on traffic.
+    schedulePayoutDrain();
+    void runMaintenance();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Request failed";
     const status = message === "Request body too large" ? 413 : 500;
@@ -89,12 +184,14 @@ async function handle(request, response) {
 const port = Number(process.env.PORT || 10000);
 const server = createServer((request, response) => void handle(request, response));
 server.listen(port, "0.0.0.0", () => {
-  console.info("[api] Shooting Master Render backend listening on port", port);
+  console.info("[api] Shooting Master Render Free backend listening on port", port);
   if (process.env.TELEGRAM_WEBHOOK_ENABLED === "true") {
     void registerTelegramWebhook().catch((error) => console.error("[telegram] webhook registration failed", error));
   } else {
     console.info("[telegram] webhook cutover is disabled; the existing webhook is unchanged");
   }
+  void runMaintenance();
+  schedulePayoutDrain();
 });
 
 let closing = false;
