@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
 import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
-import { startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startGame, startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import arenaBg from "@/assets/arena-bg.jpg";
@@ -37,6 +37,24 @@ function Home() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(i); }, []);
   const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - nowMs) / 1000)) : 0;
+  const canPlayFree = !!me?.canPlayFree;
+
+  const beginDailyGame = async () => {
+    if (busy || playing || !canPlayFree) return;
+    setBusy(true);
+    try {
+      const game = await startGame(auth());
+      setGameId(game.gameId);
+      setEnemyTotal(game.enemyTotal);
+      setResult(null);
+      haptic("medium");
+      setPlaying(true);
+    } catch (e: any) {
+      toast.error(e.message || "Unable to start your daily free game");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onEnd = async (score: number, kills: number) => {
     setPlaying(false);
@@ -99,7 +117,7 @@ function Home() {
   };
 
   const watchAd = async () => {
-    if (busy || playing) return;
+    if (busy || playing || waitSec > 0 || canPlayFree) return;
     setBusy(true);
     let adSessionId = "";
     let adCompleted = false;
@@ -188,12 +206,21 @@ function Home() {
           <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">+{COINS_PER_KILL} coins each.</span></h2>
           <p className="mt-2 text-sm text-foreground/80">Hide behind cover, raise your shield and take them down one by one.</p>
 
-          <p className="mt-4 text-center text-xs font-medium text-foreground/90">Watch a rewarded ad before each battle. The game starts only after AdsGram confirms the reward on the server.</p>
+          <p className="mt-4 text-center text-xs font-medium text-foreground/90">{canPlayFree ? "Your daily free game is ready. After it, watch a rewarded ad for each extra game." : "Daily free game used. Watch an ad to play again; the game starts only after AdsGram confirms the reward on the server."}</p>
           <div className="mt-2">
             {isLoading ? (
               <div className="h-16 animate-pulse rounded-2xl bg-muted" />
             ) : error ? (
               <p className="text-sm text-destructive">{(error as Error).message}</p>
+            ) : canPlayFree ? (
+              <button
+                disabled={busy}
+                onClick={beginDailyGame}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform disabled:opacity-70"
+              >
+                <Play className="h-6 w-6 fill-current" />
+                {busy ? "Starting game…" : "Play Daily Free Game"}
+              </button>
             ) : (
               <button
                 disabled={busy || waitSec > 0}
@@ -201,7 +228,7 @@ function Home() {
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-coral py-4 font-display text-xl text-accent-foreground shadow-card active:scale-95 transition-transform disabled:opacity-70"
               >
                 {waitSec > 0 ? <Timer className="h-6 w-6" /> : <Tv className="h-6 w-6" />}
-                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Waiting for AdsGram…" : pendingAdSessionId ? "Check AdsGram confirmation" : "Watch ad to start game"}
+                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Waiting for AdsGram…" : pendingAdSessionId ? "Check AdsGram confirmation" : "Watch ad to play again"}
               </button>
             )}
           </div>

@@ -30,7 +30,7 @@ interface Env {
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=180000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
+const AD_COOLDOWN_MS=150000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -105,8 +105,8 @@ async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:numb
   if(used.rowsAffected!==1)throw new Error("Game result already submitted");
   const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
   const cooldown=Number(session.uses_extra_play)>0?Date.now()+AD_COOLDOWN_MS:null;
-  await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=? WHERE tg_id=?",
-    args:[reward,sid,reward,reward,sid,score,t,t,cooldown,tgId]});
+  await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=CASE WHEN ? IS NULL THEN ad_ready_at ELSE ? END WHERE tg_id=?",
+    args:[reward,sid,reward,reward,sid,score,t,t,cooldown,cooldown,tgId]});
   let p=await playerRow(db,tgId,tx);
   if(p&&p.referred_by!=null&&Number(p.games_played)>=REFERRAL_GAMES_NEEDED&&Number(p.referral_paid)===0){
     const mark=await tx.execute({sql:"UPDATE players SET referral_paid=1 WHERE tg_id=? AND referral_paid=0",args:[tgId]});
@@ -440,6 +440,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const ad=selected.rows[0] as Row|undefined;
         if(!ad)throw new Error("Ad session not found");
         if(Number(ad.expires_at)<now)throw new Error("Ad session expired. Please request a new ad.");
+        if(p.last_play_date!==today())throw new Error("Play your one daily free game first. Ads unlock after that.");
         const status=String(ad.status);
         if(status!=="rewarded")
           throw new Error("Waiting for AdsGram server reward callback. The game cannot start until the reward is verified.");
@@ -467,7 +468,21 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json(result);
     }
     if(path==="/api/game/start"){
-      return json({error:"Every game requires an AdsGram server-verified reward callback. Watch a rewarded ad first."},403);
+      const result=await txRun(db,async(tx)=>{
+        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+        const now=Date.now();
+        if(p.last_play_date===today())throw new Error("Your daily free game has already been used. Watch an ad after the cooldown to play again.");
+        const active=await tx.execute({sql:"SELECT id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",args:[user.id,now]});
+        if(active.rows.length)throw new Error("A game is already active");
+        const marked=await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",args:[today(),user.id,today()]});
+        if(marked.rowsAffected!==1)throw new Error("Your daily free game has already been used.");
+        const gameId=crypto.randomUUID();
+        const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
+        const expiresAt=now+GAME_TTL_MS;
+        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,created_at,expires_at) VALUES (?,?,?,0,?,?)",args:[gameId,user.id,enemyTotal,now,expiresAt]});
+        return {gameId,enemyTotal,expiresAt};
+      });
+      return json(result);
     }
     if(path==="/api/game/finish"){
       const id=typeof body.gameId==="string"?body.gameId.slice(0,64):"",kills=Number(body.kills),score=Number(body.score);
@@ -495,6 +510,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram server-side reward verification is not configured. Please contact support."},503);
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+        if(p.last_play_date!==today())throw new Error("Play your one daily free game first. Ads unlock after that.");
         const now=Date.now();
         const extraPlays=Number(p.extra_plays);
         const adReadyAt=p.ad_ready_at==null?0:Number(p.ad_ready_at);
