@@ -8,7 +8,7 @@
 - Turso is the persistent source of truth for players, game sessions, AdsGram reward sessions, withdrawals, payout events, and the Render payout queue.
 - The Telegram bot webhook is registered on the Render API (`/telegram/webhook`).
 - AdsGram Reward URL should point to the Render endpoint; the app owner has confirmed that the provider callback URL was corrected.
-- The legacy Cloudflare Worker and its Queue/Cron configuration remain deployed temporarily for fallback and historical payout queue reconciliation. Do not delete them yet.
+- The legacy Cloudflare Worker configuration is being disabled: its workers.dev route, Queue bindings/consumer and Cron trigger are removed. Cloudflare Pages remains the frontend host. Keep the disabled Worker and empty legacy Queue resources only as short-lived rollback artifacts until Render payout processing is verified.
 
 ## Verified deployment checks
 
@@ -39,7 +39,7 @@ Render Free provides 750 instance hours per workspace per calendar month. One se
 
 Render Free web services sleep after 15 minutes without inbound HTTP/WebSocket traffic and take about one minute to wake on the next request. They can restart at any time, have 512 MB RAM / 0.1 CPU, and cannot scale beyond one instance or run attached persistent disks. Free compute is for hobby/testing and is not a guarantee of 50–60k DAU capacity.
 
-There is no Render Background Worker or Cron Job in this Free configuration. The Node API processes bounded queue work and runs maintenance only while the Web Service is awake on inbound traffic. Payout processing is therefore best-effort and can pause while the service sleeps.
+There is no Render Background Worker or Cron Job in this Free configuration. The Node API polls its durable Turso queue while the Web Service is awake, also drains immediately after new queue submissions, and continues in bounded batches. Maintenance/recovery runs at startup and on incoming traffic. Payout processing still pauses while the Free service sleeps and resumes after it wakes; it is not an always-on guarantee.
 
 ## Current Render environment
 
@@ -76,7 +76,7 @@ Do not use a fake user ID or manually call the AdsGram Reward URL with a real us
 
 A read-only GitHub Actions step reports aggregate withdrawal, Render queue, and payout-event counts. Review pending/processing/dead records before changing payout settings.
 
-The old Cloudflare Queue/Cron remains deployed. Do not enable Render automatic payouts until:
+The old Cloudflare Queue/Cron must remain disabled. Do not enable Render automatic payouts until:
 - legacy Cloudflare payout processing is confirmed paused or safely drained;
 - pending withdrawal records and prior transactions are reconciled against BscScan;
 - no signed/broadcast transaction is in-flight or awaiting receipt;
@@ -97,8 +97,8 @@ Keep one Render instance. Preserve the global Turso treasury lease, sequential p
 ### 4. Retire the old Worker only after reconciliation
 
 After the legacy queue has been drained/reconciled and AdsGram/Telegram are confirmed on Render:
-- stop the old Cloudflare Worker Queue consumer and Cron trigger;
-- remove the legacy Worker deployment/secrets only after confirming no other integration still calls it;
+- confirm the disabled Worker has no active workers.dev route, Queue consumer, or Cron trigger;
+- remove the old Cloudflare Queue resources and Worker secrets only after Render payout processing is verified and no external integration calls them;
 - retain the Pages project and Turso database.
 
 ## Upgrade path
