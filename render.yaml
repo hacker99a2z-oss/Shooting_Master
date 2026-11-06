@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: shooting-master-api
+    runtime: node
+    region: singapore
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
