@@ -13,8 +13,9 @@ let retryWakeTimer;
 async function drainPayoutQueue() {
   if (payoutDrainRunning || process.env.PAYOUT_ENABLED !== "true") return;
   payoutDrainRunning = true;
+  let processed = 0;
   try {
-    for (let processed = 0; processed < 25; processed += 1) {
+    for (; processed < 25; processed += 1) {
       const job = await queue.claimNext();
       if (!job) break;
       let action = "ack";
@@ -60,6 +61,13 @@ async function drainPayoutQueue() {
     console.error("[payout] queue drain failed", error);
   } finally {
     payoutDrainRunning = false;
+    // Continue in bounded batches when more jobs are ready. This avoids leaving
+    // jobs stranded after the 25-job safety cap on a single Free Web Service.
+    if (processed === 25 && process.env.PAYOUT_ENABLED === "true") {
+      clearTimeout(retryWakeTimer);
+      retryWakeTimer = setTimeout(schedulePayoutDrain, 1_000);
+      retryWakeTimer.unref();
+    }
   }
 }
 
@@ -183,6 +191,12 @@ async function handle(request, response) {
 
 const port = Number(process.env.PORT || 10000);
 const server = createServer((request, response) => void handle(request, response));
+
+// Render Free has no separate Background Worker or Cron service. Poll while
+// this Web Service is awake; incoming API requests also trigger immediate drains.
+// The interval does not keep a sleeping Free instance awake.
+const payoutPollTimer = setInterval(schedulePayoutDrain, 15_000);
+payoutPollTimer.unref();
 server.listen(port, "0.0.0.0", () => {
   console.info("[api] Shooting Master Render Free backend listening on port", port);
   if (process.env.TELEGRAM_WEBHOOK_ENABLED === "true") {
@@ -199,6 +213,8 @@ async function shutdown(signal) {
   if (closing) return;
   closing = true;
   console.info("[shutdown] received", signal);
+  clearInterval(payoutPollTimer);
+  clearTimeout(retryWakeTimer);
   server.close(async () => {
     await queue.close().catch((error) => console.error("[shutdown] queue close failed", error));
     process.exit(0);
