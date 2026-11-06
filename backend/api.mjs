@@ -90,7 +90,11 @@ const port = Number(process.env.PORT || 10000);
 const server = createServer((request, response) => void handle(request, response));
 server.listen(port, "0.0.0.0", () => {
   console.info("[api] Shooting Master Render backend listening on port", port);
-  void registerTelegramWebhook().catch((error) => console.error("[telegram] webhook registration failed", error));
+  if (process.env.TELEGRAM_WEBHOOK_ENABLED === "true") {
+    void registerTelegramWebhook().catch((error) => console.error("[telegram] webhook registration failed", error));
+  } else {
+    console.info("[telegram] webhook cutover is disabled; the existing webhook is unchanged");
+  }
 });
 
 let closing = false;
