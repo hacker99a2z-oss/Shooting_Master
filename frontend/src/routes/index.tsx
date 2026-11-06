@@ -105,7 +105,9 @@ function Home() {
       setResult({ score, reward: p.reward, kills, pendingVerification: Boolean(p.pendingVerification) });
       if (p.pendingVerification) toast.info("Game finished. Coins will be added automatically after AdsGram server verification.");
     } catch (e: any) {
-      toast.error(e.message);
+      const cancelled = await cancelGame({ ...auth(), gameId }).catch(() => null);
+      if (cancelled) setPlayer(cancelled);
+      toast.error(e.message || "Game result could not be saved. The unfinished session was cancelled.");
     }
   };
 
