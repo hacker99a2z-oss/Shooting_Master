@@ -56,7 +56,13 @@ function Home() {
       const id = activeGameIdRef.current;
       if (!id) return;
       activeGameIdRef.current = "";
-      void cancelGame({ ...auth(), gameId: id }).then(setPlayer).catch((error) => {
+      setPlaying(false);
+      setGameId("");
+      setResult(null);
+      void cancelGame({ ...auth(), gameId: id }).then((player) => {
+        setPlayer(player);
+        toast.info("Game cancelled because you left the game. No coins were added.");
+      }).catch((error) => {
         console.warn("[Game] session cancellation was not acknowledged; expiry still prevents unfinished rewards", error);
       });
     };

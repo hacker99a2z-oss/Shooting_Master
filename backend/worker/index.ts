@@ -477,6 +477,8 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           }
           throw new Error("A game is already active");
         }
+        const usedAd=await tx.execute({sql:"SELECT id FROM game_sessions WHERE ad_session_id=? AND tg_id=? LIMIT 1",args:[adSessionId,user.id]});
+        if(usedAd.rows.length)throw new Error("This verified AdsGram reward has already been used.");
         if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>now)
           throw new Error("Next ad unlocks soon — please wait");
         const spent=await tx.execute({sql:"UPDATE players SET extra_plays=extra_plays-1 WHERE tg_id=? AND extra_plays>0",args:[user.id]});

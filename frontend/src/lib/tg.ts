@@ -2,16 +2,13 @@
 declare global {
   interface Window {
     Telegram?: { WebApp: any };
-    Adsgram?: { init: (o: { blockId: string; debug?: boolean }) => AdsgramController };
+    Adsgram?: { init: (o: { blockId: string }) => AdsgramController };
   }
 }
 
 type AdsgramShowResult = { done: boolean; description?: string; state?: "load" | "render" | "playing" | "destroy"; error?: boolean };
-type AdsgramListener = () => void;
 type AdsgramController = {
   show: () => Promise<AdsgramShowResult>;
-  addEventListener?: (event: "onReward", callback: AdsgramListener) => void;
-  removeEventListener?: (event: "onReward", callback: AdsgramListener) => void;
   destroy?: () => void;
 };
 
@@ -55,20 +52,17 @@ export function openLink(url: string) {
 function getAdsgramController(): AdsgramController {
   if (!ADSGRAM_BLOCK_ID) throw new Error("Ads are not set up yet");
   if (!window.Adsgram) throw new Error("AdsGram SDK is not loaded. Please try again.");
-  if (!adsgramController) adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID, debug: false });
+  if (!adsgramController) adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
   return adsgramController;
 }
 
-export async function showRewardAd(onReward?: () => void): Promise<AdsgramShowResult> {
+export async function showRewardAd(): Promise<AdsgramShowResult> {
   if (adShowing) throw new Error("An ad is already opening. Please wait.");
   const controller = getAdsgramController();
   adShowing = true;
-  const rewardListener: AdsgramListener = () => onReward?.();
   try {
     // AdsGram's documented Reward flow resolves show() only after a full view.
-    // The onReward event is used only to record that completion as early as possible
-    // during page-close handling; only a successful show() result advances the UI.
-    controller.addEventListener?.("onReward", rewardListener);
+    // Only a successful show() result advances the ad session to server verification.
     const result = await controller.show();
     if (!result?.done || result.error) {
       return {
@@ -88,7 +82,6 @@ export async function showRewardAd(onReward?: () => void): Promise<AdsgramShowRe
         : "No ad is available right now. Tap again to request a new ad.";
     throw new Error(message);
   } finally {
-    controller.removeEventListener?.("onReward", rewardListener);
     adShowing = false;
   }
 }
