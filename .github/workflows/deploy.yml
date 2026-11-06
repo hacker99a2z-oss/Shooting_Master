@@ -107,42 +107,22 @@ jobs:
             printf '%s' "$PAYOUT_PRIVATE_KEY" | npx wrangler secret put PAYOUT_PRIVATE_KEY --config worker/wrangler.toml
             printf '%s' "$BSC_RPC_URL" | npx wrangler secret put BSC_RPC_URL --config worker/wrangler.toml
           fi
-      - name: Register Telegram bot webhook
+      - name: Resolve Telegram bot username
         id: telegram
-        env:
-          WORKER_URL: ${{ steps.worker.outputs.url }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
-          import { createHmac } from "node:crypto";
           const token = process.env.TELEGRAM_BOT_TOKEN;
-          const workerUrl = process.env.WORKER_URL;
-          if (!token || !workerUrl) throw new Error("Missing Telegram webhook configuration");
-          const secret = createHmac("sha256", token).update("shooting-master-telegram-webhook-v1").digest("hex");
-          const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              url: `${workerUrl}/telegram/webhook`,
-              secret_token: secret,
-              allowed_updates: ["message"],
-              drop_pending_updates: false
-            })
-          });
+          if (!token) throw new Error("Missing Telegram bot token");
+          const response = await fetch(`https://api.telegram.org/bot${token}/getMe`);
           const result = await response.json();
-          if (!response.ok || !result.ok) {
-            console.error("Telegram webhook registration failed:", result.description || response.status);
-            process.exit(1);
-          }
-          const meResponse = await fetch(`https://api.telegram.org/bot${token}/getMe`);
-          const me = await meResponse.json();
-          if (!meResponse.ok || !me.ok || !me.result?.username) {
-            console.error("Could not read the Telegram bot username:", me.description || meResponse.status);
+          if (!response.ok || !result.ok || !result.result?.username) {
+            console.error("Could not read the Telegram bot username:", result.description || response.status);
             process.exit(1);
           }
           const { appendFileSync } = await import("node:fs");
-          appendFileSync(process.env.GITHUB_OUTPUT, `username=${me.result.username}\n`);
-          console.log("Telegram /start webhook registered; bot username resolved.");
+          appendFileSync(process.env.GITHUB_OUTPUT, `username=${result.result.username}\\n`);
+          console.log("Telegram bot username resolved; webhook is managed by Render.");
           NODE
       - name: Install frontend dependencies
         working-directory: frontend
