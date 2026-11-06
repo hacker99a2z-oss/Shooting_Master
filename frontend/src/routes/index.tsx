@@ -31,14 +31,15 @@ function Home() {
   const [gameId, setGameId] = useState("");
   const [enemyTotal, setEnemyTotal] = useState(9);
   const [playing, setPlaying] = useState(false);
-  const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean } | null>(null);
+  const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean; testMode?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingAdSessionId, setPendingAdSessionId] = useState("");
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(i); }, []);
   const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - nowMs) / 1000)) : 0;
-  const canPlayFree = !!me?.canPlayFree;
+  const testMode = Boolean(me?.testMode);
+  const canPlayFree = testMode || !!me?.canPlayFree;
 
   const beginDailyGame = async () => {
     if (busy || playing || !canPlayFree) return;
@@ -62,7 +63,7 @@ function Home() {
     try {
       const p = await finishGame({ ...auth(), gameId, score, kills });
       setPlayer(p);
-      setResult({ score, reward: p.reward, kills, pendingVerification: Boolean(p.pendingVerification) });
+      setResult({ score, reward: p.reward, kills, pendingVerification: Boolean(p.pendingVerification), testMode: Boolean(p.testMode) });
       if (p.pendingVerification) toast.info("Game finished. Coins will be added automatically after AdsGram server verification.");
     } catch (e: any) {
       toast.error(e.message);
@@ -204,10 +205,10 @@ function Home() {
           <span className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground">
             <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" /> Enemy squad incoming
           </span>
-          <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">+{COINS_PER_KILL} coins each.</span></h2>
+          <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">{testMode ? "Unlimited test plays." : `+${COINS_PER_KILL} coins each.`}</span></h2>
           <p className="mt-2 text-sm text-foreground/80">Hide behind cover, raise your shield and take them down one by one.</p>
 
-          <p className="mt-4 text-center text-xs font-medium text-foreground/90">{canPlayFree ? "Your daily free game is ready. After it, watch a rewarded ad for each extra game." : "Daily free game used. Watch an ad to play again; the game starts only after AdsGram confirms the reward on the server."}</p>
+          <p className="mt-4 text-center text-xs font-medium text-foreground/90">{testMode ? "Temporary test mode is active: replay as often as needed. Test rounds do not add coins or game progress." : canPlayFree ? "Your daily free game is ready. After it, watch a rewarded ad for each extra game." : "Daily free game used. Watch an ad to play again; the game starts only after AdsGram confirms the reward on the server."}</p>
           <div className="mt-2">
             {isLoading ? (
               <div className="h-16 animate-pulse rounded-2xl bg-muted" />
@@ -220,7 +221,7 @@ function Home() {
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform disabled:opacity-70"
               >
                 <Play className="h-6 w-6 fill-current" />
-                {busy ? "Starting game…" : "Play Daily Free Game"}
+                {busy ? "Starting game…" : testMode ? "Play Test Game" : "Play Daily Free Game"}
               </button>
             ) : (
               <button
@@ -238,25 +239,26 @@ function Home() {
 
       {result && (
         <section className={`mt-4 rounded-3xl border p-5 text-center shadow-card animate-in zoom-in-95 fade-in ${result.reward > 0 ? "border-primary/50 bg-card shadow-glow" : "border-destructive/40 bg-card"}`}>
-          {result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Skull className="mx-auto h-9 w-9 text-destructive" />}
-          <p className="mt-1 font-display text-2xl">{result.reward > 0 ? `${result.kills} enemies down!` : "K.O.!"}</p>
+          {result.testMode ? <Target className="mx-auto h-9 w-9 text-primary" /> : result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Skull className="mx-auto h-9 w-9 text-destructive" />}
+          <p className="mt-1 font-display text-2xl">{result.testMode ? "Test round complete" : result.reward > 0 ? `${result.kills} enemies down!` : "K.O.!"}</p>
           <p className="text-sm text-muted-foreground">Score {result.score}</p>
-          {result.pendingVerification ? (
+          {result.testMode ? (
+            <p className="mt-2 text-sm text-muted-foreground">Test mode: no coins, leaderboard progress or referral rewards are added. You can start another round anytime.</p>
+          ) : result.pendingVerification ? (
             <p className="mt-2 text-sm text-amber-500">Ad verification pending. Your earned coins will be added after server confirmation.</p>
           ) : (
             <p className={`mt-1 font-display text-3xl ${result.reward > 0 ? "text-gold-gradient" : "text-muted-foreground"}`}>+{result.reward} coins</p>
           )}
-          {result.reward === 0 && <p className="mt-1 text-xs text-muted-foreground">Take down enemies to earn {COINS_PER_KILL} coins each.</p>}
+          {result.reward === 0 && !result.testMode && <p className="mt-1 text-xs text-muted-foreground">Take down enemies to earn {COINS_PER_KILL} coins each.</p>}
         </section>
       )}
-
       <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
         <h3 className="mb-3 text-lg">How to win</h3>
         <ul className="space-y-3 text-sm">
           <Tip icon={<Shield className="h-4 w-4" />} text="Hold the blue shield button and drag to point it any way." />
           <Tip icon={<Crosshair className="h-4 w-4" />} text="Hold the orange button, drag to aim, let go to shoot." />
           <Tip icon={<Target className="h-4 w-4" />} text={`Each battle has ${MIN_ENEMIES}–${MAX_ENEMIES} enemies. +${COINS_PER_KILL} coins for every one you take down.`} />
-          <Tip icon={<Timer className="h-4 w-4" />} text="One free game every day. After that, watch ads to play more." />
+          <Tip icon={<Timer className="h-4 w-4" />} text={testMode ? "Temporary test mode: play again as often as you need. Test rounds do not credit coins." : "One free game every day. After that, watch ads to play more."} />
         </ul>
       </section>
     </AppShell>

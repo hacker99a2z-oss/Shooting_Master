@@ -77,6 +77,10 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 - Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.
 
 
+## Temporary gameplay test mode
+
+For temporary gameplay checks, set `GAME_TEST_MODE=true` on the Render Web Service. The authenticated game-start API then allows unlimited replay without AdsGram ads. Test sessions award no coins and do not change game totals, leaderboard progress, daily challenge progress, or referral milestones. Set `GAME_TEST_MODE=false` (or remove the variable) on Render and restart/redeploy the service to restore the normal one-free-game-per-day plus AdsGram flow.
+
 ## AdsGram server-side reward confirmation
 
 Add a strong random `ADSGRAM_REWARD_SECRET` as a Render Web Service Environment secret. Do not commit it or expose it as a Vite/frontend variable.
