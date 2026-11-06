@@ -2,7 +2,51 @@ services:
   - type: web
     name: shooting-master-api
     runtime: node
+    plan: starter
     region: singapore
     rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm install --no-audit --no-fund
+    preDeployCommand: npm run db:migrate && node scripts/apply-render-queue.mjs
     startCommand: npm start
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 120
+    numInstances: 1
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ORIGIN
+        value: https://shooting-master.pages.dev
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ADSGRAM_REWARD_SECRET
+        sync: false
+      - key: OFFICIAL_CHANNEL_URL
+        value: https://t.me/shooting_master
+      - key: OFFICIAL_GROUP_URL
+        value: https://t.me/shooting_master_group
+      - key: PAYOUT_ENABLED
+        value: "false"
+
+  - type: worker
+    name: shooting-master-payout-worker
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm run worker
+    maxShutdownDelaySeconds: 120
+    numInstances: 1
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ORIGIN
+        value: https://shooting-master.pages.dev
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: PAYOUT_ENABLED
+        value: "false"
