@@ -26,5 +26,9 @@ services:
         value: https://t.me/shooting_master_group
       - key: PAYOUT_ENABLED
         value: "false"
+      - key: PAYOUT_PRIVATE_KEY
+        sync: false
+      - key: BSC_RPC_URL
+        sync: false
       - key: TELEGRAM_WEBHOOK_ENABLED
         value: "true"
