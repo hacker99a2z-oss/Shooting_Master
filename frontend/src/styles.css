@@ -218,9 +218,19 @@
 .text-destructive-foreground { color: var(--destructive-foreground); }
 .text-success { color: var(--success); }
 
-:root { --settings-panel: #308d35; --settings-value: #ffea45; --settings-ink: #f7fff1;
+:root { --settings-panel: #2c2259; --settings-value: #ffd84d; --settings-ink: #fff9e8;
   --arena-ground: #7e9290; --arena-blue: #249bdb; --arena-red: #d83e48; --arena-armor: #eff6f4; --arena-skin: #eabd8e; --arena-hair: #724c33; --arena-dark: #26333e; --arena-cover: #79916b; --arena-gold: #efcc48; --arena-sky: #91cfee; --arena-shield: #51e2fb;
 }
 .arena-three { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-.sensitivity-panel { --primary: var(--settings-value); --background: var(--settings-value); --ring: var(--settings-value); background:var(--settings-panel); color:var(--settings-ink); opacity:1; z-index:70; }
+.sensitivity-panel { --primary: var(--settings-value); --ring: var(--settings-value); color:var(--settings-ink); opacity:1; z-index:70; border:1px solid var(--border);
+  background: radial-gradient(120% 70% at 0% 0%, color-mix(in oklab, var(--hud-blue) 30%, transparent), transparent 60%), radial-gradient(110% 70% at 100% 100%, color-mix(in oklab, var(--accent) 28%, transparent), transparent 60%), var(--settings-panel);
+  box-shadow: var(--shadow-card), 0 24px 48px -12px color-mix(in oklab, var(--background) 90%, transparent); }
+.sens-row { --tone: var(--hud-orange); padding: 0.75rem 0.85rem 0.95rem; border-radius: 1rem; background: color-mix(in oklab, var(--settings-ink) 6%, transparent); border: 1px solid color-mix(in oklab, var(--tone) 45%, transparent); }
+.sens-row[data-tone="shield"] { --tone: var(--hud-blue); }
+.sens-chip { color: var(--tone); background: color-mix(in oklab, var(--tone) 22%, transparent); box-shadow: 0 0 14px -3px var(--tone); }
+.sens-slider > span:first-child { height: 0.55rem; background: color-mix(in oklab, var(--settings-ink) 14%, transparent); }
+.sens-slider > span:first-child > span { background: linear-gradient(90deg, var(--settings-value), var(--tone)); }
+.sens-slider [role="slider"] { width: 1.35rem; height: 1.35rem; background-image: var(--gradient-gold); border: 3px solid var(--settings-ink); box-shadow: 0 0 0 4px color-mix(in oklab, var(--tone) 35%, transparent), 0 0 16px var(--tone); }
+.sens-close { background: color-mix(in oklab, var(--settings-ink) 10%, transparent); color: var(--settings-ink); }
+.sens-reset { color: var(--muted-foreground); background: color-mix(in oklab, var(--settings-ink) 6%, transparent); border: 1px dashed color-mix(in oklab, var(--settings-ink) 22%, transparent); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }
