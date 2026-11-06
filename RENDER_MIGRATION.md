@@ -52,6 +52,13 @@ Required secrets on the Render Web Service:
 Non-secret settings:
 - `APP_ORIGIN=https://shooting-master.pages.dev`
 - `PAYOUT_ENABLED=false`
+
+Optional GitHub Actions secrets for a controlled credential sync:
+- `RENDER_API_KEY` — a Render API key scoped to the Shooting Master workspace/service.
+- `PAYOUT_PRIVATE_KEY` — dedicated BNB Smart Chain treasury private key.
+- `BSC_RPC_URL` — trusted HTTPS BNB Smart Chain RPC endpoint.
+
+The deployment workflow can copy the two payout credentials into this Render service without logging them. It deliberately does not change `PAYOUT_ENABLED`; keep it `false` until the queue and treasury safety checklist is complete.
 - `TELEGRAM_WEBHOOK_ENABLED=true`
 - `OFFICIAL_CHANNEL_URL=https://t.me/shooting_master`
 - `OFFICIAL_GROUP_URL=https://t.me/shooting_master_group`

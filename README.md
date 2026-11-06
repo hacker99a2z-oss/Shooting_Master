@@ -20,6 +20,9 @@ Add these GitHub Actions repository secrets:
 - TURSO_DATABASE_URL
 - TURSO_AUTH_TOKEN
 - TELEGRAM_BOT_TOKEN
+- `RENDER_API_KEY` — optional Render API key used by CI to sync payout credentials without exposing their values in logs.
+- `PAYOUT_PRIVATE_KEY` — optional BNB Smart Chain treasury key; synced to Render when the required Render API key is present.
+- `BSC_RPC_URL` — optional trusted HTTPS BNB Smart Chain RPC URL; synced to Render with the private key.
 
 Optional GitHub Actions variables: VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL, OFFICIAL_CHANNEL_URL, OFFICIAL_GROUP_URL. The Telegram bot username is fetched directly from the configured bot token during deployment. Set OFFICIAL_CHANNEL_URL and OFFICIAL_GROUP_URL to the real HTTPS Telegram channel/group links (for example, https://t.me/yourchannel or https://t.me/+invitecode); each configured link adds its matching button to the Telegram /start welcome message. Missing links are reported as deployment warnings rather than replaced with a non-working https://t.me/ homepage.
 
@@ -40,7 +43,7 @@ When the payout cutover is approved, add these Render Web Service environment va
 
 Never commit the private key, place it in a frontend `VITE_*` variable, or send it in chat.
 
-A push to `main` will place the signing key and RPC endpoint into Cloudflare Worker encrypted Secrets. The key is read only by the backend Worker; it is never sent to the browser or stored in Turso. With the variable unset or set to anything other than `true`, withdrawals remain in manual review and no automatic transfer is signed.
+The active payout code runs on the Render API service. When `RENDER_API_KEY`, `PAYOUT_PRIVATE_KEY`, and `BSC_RPC_URL` are present as GitHub Actions secrets, the deployment workflow syncs the two payout credentials directly to Render using its per-variable API and never prints their values. The workflow does not change `PAYOUT_ENABLED`: automatic transfers remain disabled unless you explicitly set `PAYOUT_ENABLED=true` on Render after completing the payout reconciliation and test checklist below.
 
 ### Payout safety controls
 

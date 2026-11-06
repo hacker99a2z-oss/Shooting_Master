@@ -105,3 +105,53 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 -D - -o /dev/null -H "Origin: https://shooting-master.pages.dev" "$RENDER_API_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
       - name: Smoke-test Pages homepage
         run: curl --fail --silent --show-error --retry 8 --retry-delay 3 https://shooting-master.pages.dev/ -o /dev/null
+      - name: Sync optional payout credentials to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          PAYOUT_PRIVATE_KEY: ${{ secrets.PAYOUT_PRIVATE_KEY }}
+          BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
+          RENDER_SERVICE_ID: srv-dbmlcqlg1s2s73b80mo0
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const { RENDER_API_KEY, PAYOUT_PRIVATE_KEY, BSC_RPC_URL, RENDER_SERVICE_ID } = process.env;
+          const missing = ["RENDER_API_KEY", "PAYOUT_PRIVATE_KEY", "BSC_RPC_URL"].filter((key) => !process.env[key]);
+          if (missing.length) {
+            console.warn("[render-env] Skipped payout credential sync; missing GitHub Actions secrets:", missing.join(", "));
+            process.exit(0);
+          }
+          const base = `https://api.render.com/v1/services/${RENDER_SERVICE_ID}`;
+          const headers = {
+            accept: "application/json",
+            "content-type": "application/json",
+            authorization: `Bearer ${RENDER_API_KEY}`,
+          };
+          const list = await fetch(`${base}/env-vars?limit=100`, { headers });
+          if (!list.ok) throw new Error(`Render environment lookup failed (HTTP ${list.status})`);
+          const rows = await list.json();
+          const values = new Map(rows.map((row) => [row.envVar?.key, row.envVar?.value]));
+          const desired = { PAYOUT_PRIVATE_KEY, BSC_RPC_URL };
+          let changed = false;
+          for (const [key, value] of Object.entries(desired)) {
+            if (values.get(key) === value) continue;
+            const response = await fetch(`${base}/env-vars/${encodeURIComponent(key)}`, {
+              method: "PUT",
+              headers,
+              body: JSON.stringify({ value }),
+            });
+            if (!response.ok) throw new Error(`Render could not update ${key} (HTTP ${response.status})`);
+            changed = true;
+            console.log(`[render-env] Updated ${key} on the Shooting Master API service.`);
+          }
+          if (changed) {
+            const deploy = await fetch(`${base}/deploys`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ clearCache: "do_not_clear" }),
+            });
+            if (!deploy.ok) throw new Error(`Render deploy after secret sync failed (HTTP ${deploy.status})`);
+            console.log("[render-env] Credential sync complete; Render deploy queued. PAYOUT_ENABLED was not changed.");
+          } else {
+            console.log("[render-env] Render already has the current payout credentials. No additional deploy needed.");
+          }
+          NODE
