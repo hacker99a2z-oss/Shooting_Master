@@ -14,7 +14,7 @@ export function AppShell({ title, children, showProfile = false, action }: { tit
   const { data } = usePlayer();
   const initial = (data?.name || "?").charAt(0).toUpperCase();
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col text-foreground">
+    <div className="app-column mx-auto flex min-h-dvh max-w-md flex-col text-foreground">
       <header className="px-5 pt-5">
         {showProfile && (
         <div className="flex items-center gap-3 rounded-3xl border bg-card p-3 text-card-foreground shadow-card">
@@ -46,7 +46,7 @@ export function AppShell({ title, children, showProfile = false, action }: { tit
               key={to}
               to={to}
               activeOptions={{ exact: true }}
-              className="flex flex-col items-center gap-0.5 rounded-xl py-2 text-xs text-muted-foreground transition-colors data-[status=active]:bg-gold data-[status=active]:text-primary-foreground"
+              className="nav-tab flex flex-col items-center gap-0.5 rounded-xl py-2 text-xs text-muted-foreground transition-colors data-[status=active]:bg-gold data-[status=active]:text-primary-foreground"
             >
               <Icon className="h-5 w-5" />
               {label}

@@ -515,7 +515,8 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
   const shieldSet = (v: boolean) => { input.current.shield = v; setShieldOn(v); if (v) haptic("light"); };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background select-none">
+    <div className="game-backdrop fixed inset-0 z-50 flex justify-center select-none">
+      <div className="app-column relative flex h-full w-full max-w-md flex-col bg-background">
       <div className="flex items-center justify-between gap-3 px-4 pt-4">
         <div className="font-display text-3xl text-gold-gradient">+{hud.kills * COINS_PER_KILL}</div>
         <div className="text-sm text-muted-foreground">Score {hud.score}</div>
@@ -560,6 +561,7 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
         >
           <Crosshair className="!h-11 !w-11 text-foreground" />
         </Button>
+      </div>
       </div>
     </div>
   );
