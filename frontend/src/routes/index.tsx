@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ShooterGame } from "@/components/ShooterGame";
 import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, startGameAfterAd, finishGame, startAdPlay, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import arenaBg from "@/assets/arena-bg.jpg";
@@ -32,28 +32,13 @@ function Home() {
   const [playing, setPlaying] = useState(false);
   const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
-  const adLaunchRef = useRef(false);
+  const [pendingAdSessionId, setPendingAdSessionId] = useState("");
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(i); }, []);
   const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - nowMs) / 1000)) : 0;
-  const canPlay = !!me && (me.canPlayFree || (me.extraPlays > 0 && waitSec === 0));
-
-  const beginGame = async () => {
-    setBusy(true);
-    try {
-      const session = await startGame(auth());
-      setGameId(session.gameId);
-      setEnemyTotal(session.enemyTotal);
-      setResult(null);
-      haptic("medium");
-      setPlaying(true);
-    } catch (e: any) { toast.error(e.message || "Unable to start game"); }
-    finally { setBusy(false); }
-  };
 
   const onEnd = async (score: number, kills: number) => {
-    adLaunchRef.current = false;
     setPlaying(false);
     try {
       const p = await finishGame({ ...auth(), gameId, score, kills });
@@ -65,50 +50,90 @@ function Home() {
     }
   };
 
+  const launchVerifiedAdGame = async (adSessionId: string) => {
+    const status = await getAdPlayStatus({ ...auth(), adSessionId });
+    if (!status.verified) {
+      throw new Error("AdsGram has not confirmed this ad yet. The game stays locked until the server callback arrives.");
+    }
+    const game = await startGameAfterAd({ ...auth(), adSessionId });
+    setPendingAdSessionId("");
+    setGameId(game.gameId);
+    setEnemyTotal(game.enemyTotal);
+    setResult(null);
+    haptic("success");
+    setPlaying(true);
+    toast.success("AdsGram verified the reward. Starting your game!");
+  };
+
+  const waitForAdVerification = async (adSessionId: string, timeoutMs = 45000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const status = await getAdPlayStatus({ ...auth(), adSessionId });
+      if (status.verified) return true;
+      if (status.expired) return false;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return false;
+  };
+
+  const checkPendingAd = async () => {
+    if (busy || playing || !pendingAdSessionId) return;
+    setBusy(true);
+    try {
+      const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAdSessionId });
+      if (status.verified) {
+        await launchVerifiedAdGame(pendingAdSessionId);
+      } else if (status.expired) {
+        setPendingAdSessionId("");
+        toast.error("This AdsGram session expired without a server reward. Please watch a new ad.");
+      } else {
+        const verified = await waitForAdVerification(pendingAdSessionId, 15000);
+        if (verified) await launchVerifiedAdGame(pendingAdSessionId);
+        else toast.info("AdsGram server confirmation has not arrived yet. The game will start only after it arrives.");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Could not check AdsGram confirmation");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const watchAd = async () => {
     if (busy || playing) return;
     setBusy(true);
     let adSessionId = "";
     let adCompleted = false;
-    const launchAdGame = async () => {
-      if (!adSessionId) throw new Error("The ad session was not created. Please request a new ad.");
-      console.info("[AdsGram] requesting game start after completed ad");
-      const game = await startGameAfterAd({ ...auth(), adSessionId });
-      console.info("[AdsGram] game start accepted", { gameId: game.gameId, enemyTotal: game.enemyTotal });
-      adLaunchRef.current = true;
-      setGameId(game.gameId);
-      setEnemyTotal(game.enemyTotal);
-      setResult(null);
-      haptic("success");
-      setPlaying(true);
-      toast.success("Ad completed. Starting your game!");
-    };
     try {
       const session = await startAdPlay(auth());
       adSessionId = session.adSessionId;
-      let adResult;
-      try {
-        adResult = await showRewardAd();
-      } catch (adError: any) {
-        const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
-        if (cancelled?.verified) {
-          await launchAdGame();
-          return;
-        }
-        toast.info((adError?.message || "No ad is available right now.") + " Tap again to request a fresh ad.");
-        return;
-      }
+      const adResult = await showRewardAd();
+
       if (!adResult.done) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
-        if (cancelled?.verified) await launchAdGame();
-        else toast.info("The ad was not completed. Tap again to request a fresh ad.");
+        if (cancelled?.verified) {
+          await launchVerifiedAdGame(adSessionId);
+        } else {
+          toast.info("The ad was not completed. No game was started. Tap again to request a new ad.");
+        }
         return;
       }
+
       adCompleted = true;
-      console.info("[AdsGram] reward ad completed", { state: adResult.state || "unknown" });
-      // On Reward blocks, show() only resolves after a full watch. Do not wait for Reward URL.
-      // The Worker holds the resulting coins until the separate server callback confirms the ad.
-      await launchAdGame();
+      setPendingAdSessionId(adSessionId);
+      console.info("[AdsGram] reward ad completed; waiting for server callback", { state: adResult.state || "unknown" });
+
+      // Mark the session as awaiting postback, then wait for AdsGram's GET Reward URL.
+      // The server callback—not the browser SDK event—unlocks the game.
+      await grantAdPlay({ ...auth(), adSessionId }).catch((error) => {
+        console.warn("[AdsGram] could not mark ad session as awaiting postback; still checking server status", error);
+      });
+
+      const verified = await waitForAdVerification(adSessionId);
+      if (!verified) {
+        toast.info("Ad watched. Waiting for AdsGram server confirmation. The game will start only after the callback arrives.");
+        return;
+      }
+      await launchVerifiedAdGame(adSessionId);
     } catch (e: any) {
       console.error("[AdsGram] watch-to-game flow failed", {
         adCompleted,
@@ -118,13 +143,16 @@ function Home() {
       if (adSessionId && !adCompleted) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
-          await launchAdGame();
+          await launchVerifiedAdGame(adSessionId);
           return;
         }
+        setPendingAdSessionId("");
+      } else if (adSessionId && adCompleted) {
+        setPendingAdSessionId(adSessionId);
+        toast.info("Ad watched. Waiting for AdsGram server confirmation. The game remains locked until the callback arrives.");
+      } else {
+        toast.error(e?.message || "Ad could not be loaded. Please tap again to retry.");
       }
-      toast.error(adCompleted
-        ? `Ad completed, but game start failed: ${e?.message || "Unknown server error"}. Tap Play again or reopen the app.`
-        : (e?.description || e?.message || "Ad could not be loaded. Please tap again to retry."));
     } finally {
       setBusy(false);
     }
@@ -160,29 +188,20 @@ function Home() {
           <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">+{COINS_PER_KILL} coins each.</span></h2>
           <p className="mt-2 text-sm text-foreground/80">Hide behind cover, raise your shield and take them down one by one.</p>
 
-          <p className="mt-4 text-center text-xs font-medium text-foreground/90">You can play 1 free game every day. Want to play more? Watch ads to play.</p>
+          <p className="mt-4 text-center text-xs font-medium text-foreground/90">Watch a rewarded ad before each battle. The game starts only after AdsGram confirms the reward on the server.</p>
           <div className="mt-2">
             {isLoading ? (
               <div className="h-16 animate-pulse rounded-2xl bg-muted" />
             ) : error ? (
               <p className="text-sm text-destructive">{(error as Error).message}</p>
-            ) : canPlay ? (
-              <button
-                onClick={beginGame}
-                disabled={busy}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform"
-              >
-                <Play className="h-6 w-6 fill-current" />
-                {me!.canPlayFree ? "Play (Daily 1 Time)" : `Play (${me!.extraPlays} left)}`}
-              </button>
             ) : (
               <button
                 disabled={busy || waitSec > 0}
-                onClick={watchAd}
+                onClick={pendingAdSessionId ? checkPendingAd : watchAd}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-coral py-4 font-display text-xl text-accent-foreground shadow-card active:scale-95 transition-transform disabled:opacity-70"
               >
                 {waitSec > 0 ? <Timer className="h-6 w-6" /> : <Tv className="h-6 w-6" />}
-                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Loading ad…" : "Watch ads to play more"}
+                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Waiting for AdsGram…" : pendingAdSessionId ? "Check AdsGram confirmation" : "Watch ad to start game"}
               </button>
             )}
           </div>

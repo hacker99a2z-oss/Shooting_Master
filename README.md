@@ -85,7 +85,7 @@ The Render API callback URL is:
 
 `https://shooting-master-api-5ao3.onrender.com/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
 
-Update the Reward URL in AdsGram's dashboard to this Render URL and replace `YOUR_SHARED_SECRET` with the value already stored in Render. Until that provider-side URL is updated, the legacy Cloudflare callback may still be needed. The client completion event only leaves a one-time ad session pending; the backend grants the extra play only after the protected server callback. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so the shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
+Update the Reward URL in AdsGram's dashboard to this Render URL and replace `YOUR_SHARED_SECRET` with the value already stored in Render. Until that provider-side URL is updated, the legacy Cloudflare callback may still be needed. The client completion event only marks a one-time ad session as awaiting postback. The frontend waits for the protected server-to-server Reward URL callback before starting the game; the backend also rejects game-start requests until that exact ad session is marked rewarded. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so the shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
 
 
 ## Telegram bot /start message
