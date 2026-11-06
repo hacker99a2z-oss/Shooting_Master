@@ -28,7 +28,7 @@ The workflow uses Pages project shooting-master and API CORS origin https://shoo
 
 ## Automatic USDT BEP-20 payouts
 
-Automatic payouts are currently **disabled on the Render backend**. New withdrawals are therefore routed to manual review until the queue cutover is complete. The old Cloudflare Worker and its Queue/Cron configuration remain temporarily available for any withdrawals that were already queued there.
+Automatic payouts are currently **disabled on the Render backend**. New withdrawals are therefore routed to manual review until the queue cutover is complete. The legacy Cloudflare Worker is being disabled (no workers.dev route, Queue consumer, or Cron trigger). Cloudflare Pages remains the frontend host. Keep legacy Queue resources only until the Render cutover audit is complete.
 
 Do not enable Render automatic payouts until the old Cloudflare payout consumer and scheduled recovery are confirmed paused/drained and all pending withdrawals have been reconciled. This prevents two services from attempting transactions with the same BNB treasury nonce. Once safe, create a dedicated BNB Smart Chain treasury wallet used only by the payout backend, fund it with the configured token and enough BNB for gas, and add the secrets to the Render Web Service Environment (not to frontend variables).
 
@@ -50,7 +50,7 @@ A push to `main` will place the signing key and RPC endpoint into Cloudflare Wor
 - The Worker signs the transfer server-side, persists the signed transaction and hash before broadcasting, and reuses that same signed transaction on retries. This is intended to prevent duplicate sends after queue retries or Worker restarts.
 - A withdrawal is marked paid only after the receipt succeeds and the expected token Transfer event matches the treasury, recipient and exact amount. Reverts, balance problems, unexpected token metadata, or unverifiable receipts are sent to manual review.
 - The queue has one consumer at a time because the treasury uses sequential account nonces. Do not send unrelated transactions from the payout treasury while this automation is active.
-- During the transition, review both the legacy Cloudflare Queue dead-letter queue and the Render `render_payout_jobs` table alongside Turso `withdrawals` / `payout_events`. Never manually mark a withdrawal paid without verifying the transaction on BscScan.
+- During the transition, review any legacy Cloudflare Queue dead-letter entries and the Render `render_payout_jobs` table alongside Turso `withdrawals` / `payout_events`. The Render API polls the durable Turso payout queue while the Free Web Service is awake; it is not an always-on worker and pauses during Free-service sleep. Never manually mark a withdrawal paid without verifying the transaction on BscScan.
 
 ### Important BNB Chain token identity note
 
