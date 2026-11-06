@@ -99,7 +99,10 @@ export function ShooterGame({ onEnd, enemyTotal }: { onEnd: (score: number, kill
     if (!ctx) return;
     let arena3D: ReturnType<typeof import("@/lib/arena-3d").createArena3D> | undefined;
     let disposed = false;
-    import("@/lib/arena-3d").then(({ createArena3D }) => {
+    // The picture-based look (hero/enemy sprites, arena background, crates/barrels/barriers) is drawn on the
+    // 2D canvas. The blocky 3D overlay used to hide it, so it stays off; gameplay is unchanged.
+    const USE_3D = false;
+    if (USE_3D) import("@/lib/arena-3d").then(({ createArena3D }) => {
       if (disposed) return;
       try { arena3D = createArena3D(wrap, W, H); canvas.style.visibility = "hidden"; }
       catch (error) { console.warn("3D renderer unavailable; using Canvas", error); }
