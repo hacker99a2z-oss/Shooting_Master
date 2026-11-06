@@ -108,10 +108,6 @@ async function shutdown(signal) {
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 process.once("SIGINT", () => void shutdown("SIGINT"));
 
-await queue.claimNext().then(async (job) => {
-  if (job) await processJob(job);
-}).catch((error) => console.error("[payout] startup queue check failed", error));
-
 console.info("[worker] Shooting Master Render payout worker started; concurrency=1");
 void runScheduledTasks();
 await poll();
