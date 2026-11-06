@@ -1,1 +1,0 @@
-Render migration adapter files will live here.
