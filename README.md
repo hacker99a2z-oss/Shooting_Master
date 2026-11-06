@@ -11,7 +11,7 @@ Telegram Mini App with a React/Vite frontend, animated shooter game, Turso datab
 
 The Free deployment intentionally uses one Render Web Service only. Render Free does not offer free Background Workers or Cron Jobs. See [RENDER_MIGRATION.md](./RENDER_MIGRATION.md) for current limitations, secrets, safe cutover steps, and the upgrade path.
 
-The existing Cloudflare Worker deployment remains available during migration. Do not disable its webhook/Queue consumer until the Render API, frontend API URL, AdsGram callback, Telegram webhook, and any pending payout jobs have been safely switched and verified.
+The frontend API URL and Telegram bot webhook now point to the Render Free service. The old Cloudflare Worker is still deployed as a temporary fallback and may still own older AdsGram callbacks or queued payout work. Do not remove its Queue consumer/Cron Trigger or disable its secrets until the AdsGram callback is switched and outstanding Cloudflare queue jobs have been reconciled.
 
 Add these GitHub Actions repository secrets:
 
@@ -28,16 +28,17 @@ The workflow uses Pages project shooting-master and API CORS origin https://shoo
 
 ## Automatic USDT BEP-20 payouts
 
-Automatic payouts are **off by default**. To enable them, first create a dedicated BNB Smart Chain treasury wallet used only by this Worker. Fund it with the supported BSC USDT token and enough BNB for gas. Do not use a personal wallet or reuse its key elsewhere.
+Automatic payouts are currently **disabled on the Render backend**. New withdrawals are therefore routed to manual review until the queue cutover is complete. The old Cloudflare Worker and its Queue/Cron configuration remain temporarily available for any withdrawals that were already queued there.
 
-Add these encrypted GitHub Actions repository secrets under Settings → Secrets and variables → Actions → Secrets:
+Do not enable Render automatic payouts until the old Cloudflare payout consumer and scheduled recovery are confirmed paused/drained and all pending withdrawals have been reconciled. This prevents two services from attempting transactions with the same BNB treasury nonce. Once safe, create a dedicated BNB Smart Chain treasury wallet used only by the payout backend, fund it with the configured token and enough BNB for gas, and add the secrets to the Render Web Service Environment (not to frontend variables).
 
-- `PAYOUT_PRIVATE_KEY` — the dedicated treasury wallet's 32-byte EVM private key in `0x...` format. Never commit it, paste it into Lovable/frontend code, or send it in chat.
-- `BSC_RPC_URL` — an HTTPS BNB Smart Chain mainnet RPC endpoint from a provider you trust. Do not use an endpoint that asks for your wallet private key.
+When the payout cutover is approved, add these Render Web Service environment variables:
 
-Then add the GitHub Actions repository variable under Settings → Secrets and variables → Actions → Variables:
+- `PAYOUT_PRIVATE_KEY` — dedicated treasury wallet's 32-byte EVM private key in `0x...` format.
+- `BSC_RPC_URL` — trusted HTTPS BNB Smart Chain mainnet RPC endpoint.
+- `PAYOUT_ENABLED=true` — enable only after the Cloudflare consumer is drained/paused and the queue is reconciled.
 
-- `PAYOUT_ENABLED` = `true`
+Never commit the private key, place it in a frontend `VITE_*` variable, or send it in chat.
 
 A push to `main` will place the signing key and RPC endpoint into Cloudflare Worker encrypted Secrets. The key is read only by the backend Worker; it is never sent to the browser or stored in Turso. With the variable unset or set to anything other than `true`, withdrawals remain in manual review and no automatic transfer is signed.
 
@@ -49,7 +50,7 @@ A push to `main` will place the signing key and RPC endpoint into Cloudflare Wor
 - The Worker signs the transfer server-side, persists the signed transaction and hash before broadcasting, and reuses that same signed transaction on retries. This is intended to prevent duplicate sends after queue retries or Worker restarts.
 - A withdrawal is marked paid only after the receipt succeeds and the expected token Transfer event matches the treasury, recipient and exact amount. Reverts, balance problems, unexpected token metadata, or unverifiable receipts are sent to manual review.
 - The queue has one consumer at a time because the treasury uses sequential account nonces. Do not send unrelated transactions from the payout treasury while this automation is active.
-- Check the Cloudflare Queue dead-letter queue and Turso `withdrawals` / `payout_events` records when a payout needs manual intervention. Never manually mark a withdrawal paid without verifying the transaction on BscScan.
+- During the transition, review both the legacy Cloudflare Queue dead-letter queue and the Render `render_payout_jobs` table alongside Turso `withdrawals` / `payout_events`. Never manually mark a withdrawal paid without verifying the transaction on BscScan.
 
 ### Important BNB Chain token identity note
 
@@ -78,15 +79,15 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 
 ## AdsGram server-side reward confirmation
 
-Add a strong random `ADSGRAM_REWARD_SECRET` as a GitHub Actions repository Secret (recommended; the deployment workflow uploads it to the Worker), or set it directly as a Worker Secret in Cloudflare Dashboard → Workers & Pages → `shooting-master-api` → Settings → Variables and Secrets. Do not commit the value or expose it as a Vite/frontend variable.
+Add a strong random `ADSGRAM_REWARD_SECRET` as a Render Web Service Environment secret. Do not commit it or expose it as a Vite/frontend variable.
 
-Configure the AdsGram Reward URL as:
+The Render API callback URL is:
 
-`https://shooting-master-api.hacker99a2z.workers.dev/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
+`https://shooting-master-api-5ao3.onrender.com/api/adsgram/reward?userid=[userId]&key=YOUR_SHARED_SECRET`
 
-Replace `YOUR_SHARED_SECRET` with the exact Worker Secret value. The client completion event only leaves a one-time ad session pending; the Worker grants the extra play only after this protected server callback. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so this shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
+Update the Reward URL in AdsGram's dashboard to this Render URL and replace `YOUR_SHARED_SECRET` with the value already stored in Render. Until that provider-side URL is updated, the legacy Cloudflare callback may still be needed. The client completion event only leaves a one-time ad session pending; the backend grants the extra play only after the protected server callback. AdsGram's documented callback identifies the Telegram user but does not provide a signed event ID/signature, so the shared-secret callback is not equivalent to a cryptographically signed receipt. AdsGram does not send the Reward URL callback for debug ads; test with a production ad block.
 
 
 ## Telegram bot /start message
 
-The deployment registers the Worker as the Telegram bot webhook. A private-chat `/start` command sends an English feature summary and an inline keyboard with an **Open App** Web App button. Set the optional repository Actions variables `OFFICIAL_CHANNEL_URL` and `OFFICIAL_GROUP_URL` to valid public Telegram links (for example, `https://t.me/yourchannel` or a `https://t.me/+invitecode` link) to show the 📢 Official Channel and 👥 Official Group buttons. If either variable is blank, that button is omitted. The webhook secret is derived from the bot token and is not stored as a separate plaintext variable.
+The Render API now registers the Telegram bot webhook when `TELEGRAM_WEBHOOK_ENABLED=true`. A private-chat `/start` command sends an English feature summary and an inline keyboard with an **Open App** Web App button. The GitHub Pages deployment workflow resolves the bot username but no longer resets the webhook to the legacy Worker. Set the optional repository Actions variables `OFFICIAL_CHANNEL_URL` and `OFFICIAL_GROUP_URL` to valid public Telegram links to show the Official Channel and Official Group buttons. The webhook secret is derived from the bot token and is not stored as a separate plaintext variable.
