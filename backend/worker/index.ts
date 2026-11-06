@@ -491,6 +491,35 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       });
       return json(result);
     }
+    if(path==="/api/game/cancel"){
+      const id=typeof body.gameId==="string"?body.gameId.slice(0,64):"";
+      if(!id)return json({error:"Game session ID is required"},400);
+      const result=await txRun(db,async(tx)=>{
+        const selected=await tx.execute({sql:"SELECT * FROM game_sessions WHERE id=? AND tg_id=?",args:[id,user.id]});
+        const session=selected.rows[0] as Row|undefined;
+        if(!session)throw new Error("Game session not found");
+        let player=await playerRow(db,user.id,tx);
+        if(!player)throw new Error("Player not found");
+        if(session.consumed_at!=null)return {...view(player),cancelled:false,alreadyFinished:true};
+        const now=Date.now();
+        const consumed=await tx.execute({sql:"UPDATE game_sessions SET consumed_at=?,pending_score=NULL,pending_kills=NULL WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[now,id,user.id]});
+        if(consumed.rowsAffected!==1){
+          player=await playerRow(db,user.id,tx);
+          return {...view(player!),cancelled:false,alreadyFinished:true};
+        }
+        // An ad-unlocked game has already consumed its verified extra play.
+        // Abandoning it awards no coins and starts the normal cooldown.
+        if(Number(session.uses_extra_play)>0){
+          const readyAt=now+AD_COOLDOWN_MS;
+          await tx.execute({sql:"UPDATE players SET ad_ready_at=CASE WHEN ad_ready_at IS NULL OR ad_ready_at<? THEN ? ELSE ad_ready_at END WHERE tg_id=?",args:[readyAt,readyAt,user.id]});
+        }
+        player=await playerRow(db,user.id,tx);
+        if(!player)throw new Error("Player not found");
+        console.info("[Game] unfinished session cancelled without reward", { gameId:id, adUnlocked:Number(session.uses_extra_play)>0 });
+        return {...view(player),cancelled:true,alreadyFinished:false};
+      });
+      return json(result);
+    }
     if(path==="/api/game/start"){
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");

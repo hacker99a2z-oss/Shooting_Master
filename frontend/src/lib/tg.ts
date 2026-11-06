@@ -2,28 +2,18 @@
 declare global {
   interface Window {
     Telegram?: { WebApp: any };
-    Adsgram?: { init: (o: { blockId: string }) => AdsgramController };
+    Adsgram?: { init: (o: { blockId: string; debug?: boolean }) => AdsgramController };
   }
 }
 
 type AdsgramShowResult = { done: boolean; description?: string; state?: "load" | "render" | "playing" | "destroy"; error?: boolean };
-type AdsgramEvent = "onReward" | "onSkip" | "onError" | "onBannerNotFound" | "onNonStopShow" | "onTooLongSession";
-type AdsgramListener = (event?: unknown) => void;
+type AdsgramListener = () => void;
 type AdsgramController = {
   show: () => Promise<AdsgramShowResult>;
-  addEventListener?: (event: AdsgramEvent, callback: AdsgramListener) => void;
-  removeEventListener?: (event: AdsgramEvent, callback: AdsgramListener) => void;
+  addEventListener?: (event: "onReward", callback: AdsgramListener) => void;
+  removeEventListener?: (event: "onReward", callback: AdsgramListener) => void;
   destroy?: () => void;
 };
-
-function adsgramEventMessage(event: unknown, fallback: string): string {
-  if (event && typeof event === "object") {
-    const detail = event as { description?: unknown; message?: unknown };
-    if (typeof detail.description === "string" && detail.description.trim()) return detail.description;
-    if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
-  }
-  return fallback;
-}
 
 let adsgramController: AdsgramController | null = null;
 let adShowing = false;
@@ -65,33 +55,29 @@ export function openLink(url: string) {
 function getAdsgramController(): AdsgramController {
   if (!ADSGRAM_BLOCK_ID) throw new Error("Ads are not set up yet");
   if (!window.Adsgram) throw new Error("AdsGram SDK is not loaded. Please try again.");
-  if (!adsgramController) adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+  if (!adsgramController) adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID, debug: false });
   return adsgramController;
 }
 
-export async function showRewardAd(): Promise<AdsgramShowResult> {
+export async function showRewardAd(onReward?: () => void): Promise<AdsgramShowResult> {
   if (adShowing) throw new Error("An ad is already opening. Please wait.");
   const controller = getAdsgramController();
   adShowing = true;
-  const listeners: Array<[AdsgramEvent, AdsgramListener]> = [];
+  const rewardListener: AdsgramListener = () => onReward?.();
   try {
-    // AdsGram resolves show() on completion, and also exposes onReward.
-    // Race both signals, but let the Worker alone decide whether a reward is granted.
-    const rewardEvent = new Promise<AdsgramShowResult>((resolve, reject) => {
-      if (!controller.addEventListener) return;
-      const subscribe = (event: AdsgramEvent, listener: AdsgramListener) => {
-        listeners.push([event, listener]);
-        controller.addEventListener?.(event, listener);
+    // AdsGram's documented Reward flow resolves show() only after a full view.
+    // The onReward event is used only to record that completion as early as possible
+    // during page-close handling; only a successful show() result advances the UI.
+    controller.addEventListener?.("onReward", rewardListener);
+    const result = await controller.show();
+    if (!result?.done || result.error) {
+      return {
+        done: false,
+        description: result?.description || "The ad was not completed.",
+        state: result?.state,
+        error: result?.error,
       };
-      subscribe("onReward", () => resolve({ done: true, state: "destroy" }));
-      subscribe("onSkip", () => resolve({ done: false, description: "The ad was skipped.", state: "destroy" }));
-      subscribe("onError", (event) => reject(new Error(adsgramEventMessage(event, "The ad could not be played."))));
-      subscribe("onBannerNotFound", () => reject(new Error("No ad is available right now. Please try again.")));
-      subscribe("onNonStopShow", () => reject(new Error("Please wait before requesting another ad.")));
-      subscribe("onTooLongSession", () => reject(new Error("The AdsGram session expired. Please reopen the game and try again.")));
-    });
-    const result = await Promise.race([controller.show(), rewardEvent]);
-    if (!result?.done) return { done: false, description: result?.description || "The ad was not completed.", state: result?.state, error: result?.error };
+    }
     return result;
   } catch (reason) {
     const detail = reason as Partial<AdsgramShowResult>;
@@ -102,9 +88,7 @@ export async function showRewardAd(): Promise<AdsgramShowResult> {
         : "No ad is available right now. Tap again to request a new ad.";
     throw new Error(message);
   } finally {
-    listeners.forEach(([event, listener]) => controller.removeEventListener?.(event, listener));
-    // AdsGram destroys a failed, skipped, or completed banner automatically.
-    // Only reset our local guard; the controller itself is reused for the next request.
+    controller.removeEventListener?.("onReward", rewardListener);
     adShowing = false;
   }
 }

@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Play, Tv, Trophy, Timer, Crosshair, Gauge, Target } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { ArcheryGame } from "@/components/ArcheryGame";
 import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startGame, startGameAfterAd, finishGame, cancelGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
 import rangeBg from "@/assets/archery-range.jpg";
@@ -33,12 +33,39 @@ function Home() {
   const [playing, setPlaying] = useState(false);
   const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pendingAdSessionId, setPendingAdSessionId] = useState("");
+  const [pendingAdSessionId, setPendingAdSessionId] = useState(() => {
+    try { return localStorage.getItem("shooting-master.pending-ad-session") || ""; }
+    catch { return ""; }
+  });
+  const activeGameIdRef = useRef("");
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(i); }, []);
   const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - nowMs) / 1000)) : 0;
   const canPlayFree = Boolean(me?.canPlayFree);
+
+  useEffect(() => {
+    try {
+      if (pendingAdSessionId) localStorage.setItem("shooting-master.pending-ad-session", pendingAdSessionId);
+      else localStorage.removeItem("shooting-master.pending-ad-session");
+    } catch { /* local storage may be disabled in a restricted webview */ }
+  }, [pendingAdSessionId]);
+
+  useEffect(() => {
+    const cancelAbandonedGame = () => {
+      const id = activeGameIdRef.current;
+      if (!id) return;
+      activeGameIdRef.current = "";
+      void cancelGame({ ...auth(), gameId: id }).then(setPlayer).catch((error) => {
+        console.warn("[Game] session cancellation was not acknowledged; expiry still prevents unfinished rewards", error);
+      });
+    };
+    window.addEventListener("pagehide", cancelAbandonedGame);
+    return () => {
+      window.removeEventListener("pagehide", cancelAbandonedGame);
+      cancelAbandonedGame();
+    };
+  }, [setPlayer]);
 
   const beginDailyGame = async () => {
     if (busy || playing || !canPlayFree) return;
@@ -46,6 +73,7 @@ function Home() {
     try {
       const game = await startGame(auth());
       setGameId(game.gameId);
+      activeGameIdRef.current = game.gameId;
       setEnemyTotal(game.enemyTotal);
       setResult(null);
       haptic("medium");
@@ -58,6 +86,7 @@ function Home() {
   };
 
   const onEnd = async (score: number, kills: number) => {
+    activeGameIdRef.current = "";
     setPlaying(false);
     try {
       const p = await finishGame({ ...auth(), gameId, score, kills });
@@ -69,46 +98,66 @@ function Home() {
     }
   };
 
-  const launchVerifiedAdGame = async (adSessionId: string) => {
+  const launchVerifiedAdGame = useCallback(async (adSessionId: string) => {
     const status = await getAdPlayStatus({ ...auth(), adSessionId });
     if (!status.verified) {
       throw new Error("AdsGram has not confirmed this ad yet. The game stays locked until the server callback arrives.");
     }
+    setPlayer(status);
     const game = await startGameAfterAd({ ...auth(), adSessionId });
     setPendingAdSessionId("");
     setGameId(game.gameId);
+    activeGameIdRef.current = game.gameId;
     setEnemyTotal(game.enemyTotal);
     setResult(null);
     haptic("success");
     setPlaying(true);
     toast.success("AdsGram verified the reward. Starting your game!");
-  };
+  }, [setPlayer]);
 
-  const waitForAdVerification = async (adSessionId: string, timeoutMs = 45000) => {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const status = await getAdPlayStatus({ ...auth(), adSessionId });
-      if (status.verified) return true;
-      if (status.expired) return false;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    return false;
-  };
+  // Keep checking a pending session after the SDK reports a full view and after a
+  // Telegram WebView is reopened. Only the protected server Reward URL can unlock it.
+  useEffect(() => {
+    if (!pendingAdSessionId || busy || playing) return;
+    let stopped = false;
+    let checking = false;
+    const poll = async () => {
+      if (stopped || checking) return;
+      checking = true;
+      try {
+        const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAdSessionId });
+        if (stopped) return;
+        setPlayer(status);
+        if (status.verified) {
+          await launchVerifiedAdGame(pendingAdSessionId);
+        } else if (status.expired) {
+          setPendingAdSessionId("");
+          toast.error("AdsGram did not confirm this ad before the session expired. Please watch a new ad.");
+        }
+      } catch (error) {
+        if (!stopped) console.warn("[AdsGram] server verification remains pending", error);
+      } finally {
+        checking = false;
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1500);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [pendingAdSessionId, busy, playing, launchVerifiedAdGame, setPlayer]);
 
   const checkPendingAd = async () => {
     if (busy || playing || !pendingAdSessionId) return;
     setBusy(true);
     try {
       const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAdSessionId });
+      setPlayer(status);
       if (status.verified) {
         await launchVerifiedAdGame(pendingAdSessionId);
       } else if (status.expired) {
         setPendingAdSessionId("");
         toast.error("This AdsGram session expired without a server reward. Please watch a new ad.");
       } else {
-        const verified = await waitForAdVerification(pendingAdSessionId, 15000);
-        if (verified) await launchVerifiedAdGame(pendingAdSessionId);
-        else toast.info("AdsGram server confirmation has not arrived yet. The game will start only after it arrives.");
+        toast.info("Waiting for AdsGram's server callback. The game will start automatically as soon as it is verified.");
       }
     } catch (e: any) {
       toast.error(e.message || "Could not check AdsGram confirmation");
@@ -118,59 +167,51 @@ function Home() {
   };
 
   const watchAd = async () => {
-    if (busy || playing || waitSec > 0 || canPlayFree) return;
+    if (busy || playing || waitSec > 0 || canPlayFree || pendingAdSessionId) return;
     setBusy(true);
     let adSessionId = "";
-    let adCompleted = false;
     try {
       const session = await startAdPlay(auth());
       adSessionId = session.adSessionId;
+      // Persist before the SDK opens. If Telegram closes mid-ad, a verified callback
+      // can still be recovered automatically when the user reopens the Mini App.
+      setPendingAdSessionId(adSessionId);
       const adResult = await showRewardAd();
 
-      if (!adResult.done) {
+      if (!adResult.done || adResult.error) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
           await launchVerifiedAdGame(adSessionId);
         } else {
-          toast.info("The ad was not completed. No game was started. Tap again to request a new ad.");
+          setPendingAdSessionId("");
+          toast.info("The ad was skipped or not completed. No extra game was unlocked.");
         }
         return;
       }
 
-      adCompleted = true;
-      setPendingAdSessionId(adSessionId);
-      console.info("[AdsGram] reward ad completed; waiting for server callback", { state: adResult.state || "unknown" });
-
-      // Mark the session as awaiting postback, then wait for AdsGram's GET Reward URL.
-      // The server callback—not the browser SDK event—unlocks the game.
-      await grantAdPlay({ ...auth(), adSessionId }).catch((error) => {
-        console.warn("[AdsGram] could not mark ad session as awaiting postback; still checking server status", error);
-      });
-
-      const verified = await waitForAdVerification(adSessionId);
-      if (!verified) {
-        toast.info("Ad watched. Waiting for AdsGram server confirmation. The game will start only after the callback arrives.");
-        return;
+      console.info("[AdsGram] SDK show() confirmed a completed rewarded view; waiting for the server Reward URL", { state: adResult.state || "destroy" });
+      const confirmation = await grantAdPlay({ ...auth(), adSessionId });
+      setPlayer(confirmation);
+      if (confirmation.verified) {
+        await launchVerifiedAdGame(adSessionId);
+      } else {
+        toast.info("Ad fully viewed. Waiting for AdsGram's server-to-server Reward URL verification. The game starts automatically after confirmation.");
       }
-      await launchVerifiedAdGame(adSessionId);
     } catch (e: any) {
       console.error("[AdsGram] watch-to-game flow failed", {
-        adCompleted,
         hasAdSession: Boolean(adSessionId),
         message: e?.message || String(e),
       });
-      if (adSessionId && !adCompleted) {
+      if (adSessionId) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
         if (cancelled?.verified) {
           await launchVerifiedAdGame(adSessionId);
-          return;
+        } else {
+          setPendingAdSessionId("");
+          toast.error(e?.message || "Ad could not be loaded. Please try again.");
         }
-        setPendingAdSessionId("");
-      } else if (adSessionId && adCompleted) {
-        setPendingAdSessionId(adSessionId);
-        toast.info("Ad watched. Waiting for AdsGram server confirmation. The game remains locked until the callback arrives.");
       } else {
-        toast.error(e?.message || "Ad could not be loaded. Please tap again to retry.");
+        toast.error(e?.message || "Ad could not be loaded. Please try again.");
       }
     } finally {
       setBusy(false);
