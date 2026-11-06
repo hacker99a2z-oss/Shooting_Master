@@ -1,7 +1,10 @@
 name = "shooting-master-api"
 main = "index.ts"
 compatibility_date = "2026-11-01"
-workers_dev = true
+
+# Legacy Worker is retained only as a disabled rollback artifact.
+# The active API, AdsGram callback, Telegram webhook and payout queue run on Render.
+workers_dev = false
 
 [observability]
 enabled = true
@@ -14,17 +17,6 @@ head_sampling_rate = 1.0
 APP_ORIGIN = "https://shooting-master.pages.dev"
 PAYOUT_ENABLED = "false"
 
-[[queues.producers]]
-binding = "PAYOUT_QUEUE"
-queue = "shooting-master-payouts"
-
-[[queues.consumers]]
-queue = "shooting-master-payouts"
-max_batch_size = 1
-max_concurrency = 1
-max_batch_timeout = 5
-max_retries = 5
-dead_letter_queue = "shooting-master-payouts-dlq"
-
+# Explicitly remove the legacy scheduled payout recovery trigger.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = []
