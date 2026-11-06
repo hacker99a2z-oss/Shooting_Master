@@ -1,24 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Play, Tv, Trophy, Swords, Timer, Shield, Crosshair, Skull, Gift, Target } from "lucide-react";
+import { Play, Tv, Trophy, Timer, Crosshair, Gauge, Target } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { ShooterGame } from "@/components/ShooterGame";
+import { ArcheryGame } from "@/components/ArcheryGame";
 import { SensitivitySettings } from "@/components/SensitivitySettings";
 import { usePlayer } from "@/hooks/use-player";
 import { startGame, startGameAfterAd, finishGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
 import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
-import arenaBg from "@/assets/cartoon-arena.jpg";
+import rangeBg from "@/assets/archery-range.jpg";
 
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Coin Rush — Play & Earn" },
-      { name: "description", content: "Take cover, block and shoot the enemy squad. Earn 10 coins for every enemy you take down." },
-      { property: "og:title", content: "Coin Rush — Play & Earn" },
-      { property: "og:description", content: "Clear 9–12 enemies per battle and earn 10 coins for each one." },
+      { title: "Archery Master — Play & Earn" },
+      { name: "description", content: "Aim, draw your bow and hit 9–12 targets. Earn 10 coins for every target you hit." },
+      { property: "og:title", content: "Archery Master — Play & Earn" },
+      { property: "og:description", content: "Hit 9–12 archery targets per round and earn 10 coins for each one." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -195,18 +195,18 @@ function Home() {
   const daily = me?.dailyGames ?? 0;
 
   return (
-    <AppShell title="Battle Arena" showProfile action={<SensitivitySettings />}>
-      {playing && <ShooterGame onEnd={onEnd} enemyTotal={enemyTotal} />}
+    <AppShell title="Archery Range" showProfile action={<SensitivitySettings />}>
+      {playing && <ArcheryGame onEnd={onEnd} targetTotal={enemyTotal} />}
 
       <section className="relative overflow-hidden rounded-3xl border border-primary/30 shadow-card">
-        <img src={arenaBg} alt="Military base arena" className="absolute inset-0 h-full w-full object-cover object-top" />
+        <img src={rangeBg} alt="Cartoon archery range" className="absolute inset-0 h-full w-full object-cover object-center" />
         <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/50 to-background" />
         <div className="relative flex min-h-[340px] flex-col justify-end p-5 pb-12">
           <span className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" /> Enemy squad incoming
+            <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" /> Targets are up
           </span>
-          <h2 className="text-4xl leading-none drop-shadow">Clear {MIN_ENEMIES}–{MAX_ENEMIES} enemies.<br /><span className="text-gold-gradient">{testMode ? "Unlimited test plays." : `+${COINS_PER_KILL} coins each.`}</span></h2>
-          <p className="mt-2 text-sm text-foreground/80">Hide behind cover, raise your shield and take them down one by one.</p>
+          <h2 className="text-4xl leading-none drop-shadow">Hit {MIN_ENEMIES}–{MAX_ENEMIES} targets.<br /><span className="text-gold-gradient">{testMode ? "Unlimited test plays." : `+${COINS_PER_KILL} coins each.`}</span></h2>
+          <p className="mt-2 text-sm text-foreground/80">Aim, draw your bow and hit each target before it disappears.</p>
 
           <p className="mt-4 text-center text-xs font-medium text-foreground/90">{testMode ? "Temporary test mode is active: replay as often as needed. Test rounds do not add coins or game progress." : canPlayFree ? "Your daily free game is ready. After it, watch a rewarded ad for each extra game." : "Daily free game used. Watch an ad to play again; the game starts only after AdsGram confirms the reward on the server."}</p>
           <div className="mt-2">
@@ -239,8 +239,8 @@ function Home() {
 
       {result && (
         <section className={`mt-4 rounded-3xl border p-5 text-center shadow-card animate-in zoom-in-95 fade-in ${result.reward > 0 ? "border-primary/50 bg-card shadow-glow" : "border-destructive/40 bg-card"}`}>
-          {result.testMode ? <Target className="mx-auto h-9 w-9 text-primary" /> : result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Skull className="mx-auto h-9 w-9 text-destructive" />}
-          <p className="mt-1 font-display text-2xl">{result.testMode ? "Test round complete" : result.reward > 0 ? `${result.kills} enemies down!` : "K.O.!"}</p>
+          {result.testMode ? <Target className="mx-auto h-9 w-9 text-primary" /> : result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Target className="mx-auto h-9 w-9 text-destructive" />}
+          <p className="mt-1 font-display text-2xl">{result.testMode ? "Test round complete" : result.reward > 0 ? `${result.kills} targets hit!` : "No targets hit"}</p>
           <p className="text-sm text-muted-foreground">Score {result.score}</p>
           {result.testMode ? (
             <p className="mt-2 text-sm text-muted-foreground">Test mode: no coins, leaderboard progress or referral rewards are added. You can start another round anytime.</p>
@@ -249,15 +249,15 @@ function Home() {
           ) : (
             <p className={`mt-1 font-display text-3xl ${result.reward > 0 ? "text-gold-gradient" : "text-muted-foreground"}`}>+{result.reward} coins</p>
           )}
-          {result.reward === 0 && !result.testMode && <p className="mt-1 text-xs text-muted-foreground">Take down enemies to earn {COINS_PER_KILL} coins each.</p>}
+          {result.reward === 0 && !result.testMode && <p className="mt-1 text-xs text-muted-foreground">Hit targets to earn {COINS_PER_KILL} coins each.</p>}
         </section>
       )}
       <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
         <h3 className="mb-3 text-lg">How to win</h3>
         <ul className="space-y-3 text-sm">
-          <Tip icon={<Shield className="h-4 w-4" />} text="Hold the blue shield button and drag to point it any way." />
-          <Tip icon={<Crosshair className="h-4 w-4" />} text="Hold the orange button, drag to aim, let go to shoot." />
-          <Tip icon={<Target className="h-4 w-4" />} text={`Each battle has ${MIN_ENEMIES}–${MAX_ENEMIES} enemies. +${COINS_PER_KILL} coins for every one you take down.`} />
+          <Tip icon={<Crosshair className="h-4 w-4" />} text="Hold the bow button (or the field), drag to aim, let go to shoot. Draw fully so the arrow lands on the sight." />
+          <Tip icon={<Gauge className="h-4 w-4" />} text="The first target stays 4 seconds, the last only 1 second. Later targets move and dodge." />
+          <Tip icon={<Target className="h-4 w-4" />} text={`Each round has ${MIN_ENEMIES}–${MAX_ENEMIES} targets. +${COINS_PER_KILL} coins for every target you hit.`} />
           <Tip icon={<Timer className="h-4 w-4" />} text={testMode ? "Temporary test mode: play again as often as you need. Test rounds do not credit coins." : "One free game every day. After that, watch ads to play more."} />
         </ul>
       </section>

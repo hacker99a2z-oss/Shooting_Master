@@ -1,6 +1,6 @@
 # Shooting Master
 
-Telegram Mini App with a React/Vite frontend, animated shooter game, Turso database, Telegram authentication, AdsGram reward verification, leaderboard, and optional USDT BEP-20 payouts.
+Telegram Mini App with a React/Vite frontend, animated archery game, Turso database, Telegram authentication, AdsGram reward verification, leaderboard, and optional USDT BEP-20 payouts.
 
 ## Target deployment
 
