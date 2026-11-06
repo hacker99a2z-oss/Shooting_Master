@@ -71,15 +71,11 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 
 - Withdrawals atomically reserve coins. When explicitly enabled and fully configured, eligible USDT BEP-20 withdrawals are signed by the backend treasury and sent through the Cloudflare Queue; otherwise requests remain in manual review. Automatic payouts are off by default and require the secrets and activation steps below.
 - AdsGram rewards are credited only after the protected server-to-server Reward URL callback consumes a pending one-time session. AdsGram's documented callback has no signature or unique event ID, so the shared-secret URL is not a cryptographically signed receipt.
-- The canvas game is client-rendered. Server-issued one-time sessions, enemy limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
+- The archery game is client-rendered. Server-issued one-time sessions, target limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
 - The leaderboard shows up to 50 players who played at least 1 game this season; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
 - 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
 - Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.
 
-
-## Temporary gameplay test mode
-
-For temporary gameplay checks, set `GAME_TEST_MODE=true` on the Render Web Service. The authenticated game-start API then allows unlimited replay without AdsGram ads. Test sessions award no coins and do not change game totals, leaderboard progress, daily challenge progress, or referral milestones. Set `GAME_TEST_MODE=false` (or remove the variable) on Render and restart/redeploy the service to restore the normal one-free-game-per-day plus AdsGram flow.
 
 ## AdsGram server-side reward confirmation
 

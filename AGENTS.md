@@ -10,7 +10,6 @@
 <!-- LOVABLE:END -->
 
 - Retain Telegram-authenticated API and payout rules; saved destinations are user-scoped and separate from active wallet sessions.
-- Use Three.js only for rendering the existing Canvas simulation, with a 2D fallback when WebGL is unavailable.
 - WalletConnect is initialized only with a configured public Reown project ID; never treat a saved address as a connected wallet.
-- Gameplay is the 2D-canvas archery game (ArcheryGame); the server-issued enemy_total is the target count and hits are reported as kills, so backend reward rules stay unchanged.
+- Gameplay is the 2D-canvas archery game (ArcheryGame); the server-issued target count is used for each round, and the existing authenticated game-result API handles reward settlement.
 - Target timing/motion curves live in lib/rules.ts as pure functions so they stay unit-tested.

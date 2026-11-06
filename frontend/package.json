@@ -61,9 +61,7 @@
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
     "zod": "^3.25.76",
-    "pathfinding": "^0.4.18",
-    "@walletconnect/ethereum-provider": "^2.26.0",
-    "three": "^0.187.0"
+    "@walletconnect/ethereum-provider": "^2.26.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -85,9 +83,7 @@
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5",
     "vitest": "^4.1.10",
-    "wrangler": "^4.68.0",
-    "@types/pathfinding": "^0.1.0",
-    "@types/three": "^0.187.0"
+    "wrangler": "^4.68.0"
   },
   "engines": {
     "node": ">=22.12.0"

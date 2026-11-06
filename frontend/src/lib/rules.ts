@@ -3,8 +3,7 @@ export const COINS_PER_USD = 100_000;
 export const REFERRAL_REWARD = 100;
 export const REFERRAL_GAMES_NEEDED = 10;
 
-// Each match has a random total of 9–12 enemies. Every kill pays 10 coins.
-// The match ends once all of them are down (or the hero dies).
+// Each round has 9–12 archery targets. Every target hit pays 10 coins.
 export const COINS_PER_KILL = 10;
 export const MIN_ENEMIES = 9;
 export const MAX_ENEMIES = 12;
@@ -12,23 +11,6 @@ export function rewardForKills(kills: number): number {
   const k = Math.max(0, Math.min(MAX_ENEMIES, Math.floor(kills)));
   return k * COINS_PER_KILL;
 }
-export function randomEnemyTotal(rand = Math.random): number {
-  return MIN_ENEMIES + Math.floor(rand() * (MAX_ENEMIES - MIN_ENEMIES + 1));
-}
-// Waves: 1, then 1, then 2 together, then 3, then 4; after that random 2–4. Last wave is trimmed to the total.
-export function wavePlan(total: number, rand = Math.random): number[] {
-  const start = [1, 1, 2, 3, 4];
-  const waves: number[] = [];
-  let left = total;
-  for (let i = 0; left > 0; i++) {
-    const want = i < start.length ? start[i]! : 2 + Math.floor(rand() * 3);
-    const n = Math.min(want, left);
-    waves.push(n);
-    left -= n;
-  }
-  return waves;
-}
-
 // Archery: the server's 9–12 total is the number of targets. One target is shown at a time.
 // The first stays up for 4 s, the last for 1 s, evenly shorter in between.
 // The first targets stand still; after that they move, faster and less predictably each time.

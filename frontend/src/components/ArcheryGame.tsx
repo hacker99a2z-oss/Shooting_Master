@@ -308,10 +308,6 @@ export function ArcheryGame({ onEnd, targetTotal }: { onEnd: (score: number, hit
         setHud({ score, hits, shown: nextIdx, total, timeLeft: tl });
       }
       if (!readyRef.current && bgImg.complete && bgImg.naturalWidth) { wrap.dataset["sceneReady"] = "true"; readyRef.current = true; }
-      if (import.meta.env.DEV) {
-        const tt = cur as Tgt | null;
-        (window as Window & { __archery?: unknown }).__archery = { aim: { x: inp.aimX, y: inp.aimY }, target: tt ? { x: tt.x, y: tt.y, r: radius(tt), state: tt.state, index: tt.index, life: tt.life, speed: Math.abs(tt.vx) } : null, hits, score, shown: nextIdx, total, done };
-      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

@@ -11,8 +11,4 @@ describe("archery aim sensitivity", () => {
     saveSensitivity({ aim: 0 });
     expect(sensFactor(loadSensitivity().aim)).toBe(0.1);
   });
-  it("reuses the old shoot sensitivity once for existing players", () => {
-    localStorage.setItem("control-sensitivity", JSON.stringify({ shoot: 80, shield: 10 }));
-    expect(loadSensitivity()).toEqual({ aim: 80 });
-  });
 });

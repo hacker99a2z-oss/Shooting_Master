@@ -1,24 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   AD_COOLDOWN_MS, MIN_WITHDRAW_USD, DAILY_GAMES_GOAL, coinsToUsd, prizeForRank, randomBonusCoins,
-  randomEnemyTotal, rewardForKills, seasonEndsAt, wavePlan,
+  rewardForKills, seasonEndsAt,
 } from "@/lib/rules";
 
 describe("game rewards & difficulty", () => {
-  it("each kill pays 10 coins", () => {
+  it("each target hit pays 10 coins", () => {
     expect(rewardForKills(1)).toBe(10);
     expect(rewardForKills(7)).toBe(70);
   });
   it("can't earn for more than 12 kills", () => expect(rewardForKills(50)).toBe(120));
-  it("enemy total is always 9 to 12", () => {
-    expect(randomEnemyTotal(() => 0)).toBe(9);
-    expect(randomEnemyTotal(() => 0.999)).toBe(12);
-  });
-  it("waves go 1, 1, 2, 3, then the rest", () => {
-    expect(wavePlan(9)).toEqual([1, 1, 2, 3, 2]);
-    expect(wavePlan(11)).toEqual([1, 1, 2, 3, 4]);
-    expect(wavePlan(12, () => 0).reduce((a, b) => a + b, 0)).toBe(12);
-  });
   it("ad timer is 3 minutes", () => expect(AD_COOLDOWN_MS).toBe(180_000));
   it("daily bonus needs 100 games and pays $0.01-$0.05", () => {
     expect(DAILY_GAMES_GOAL).toBe(100);

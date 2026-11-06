@@ -28,7 +28,6 @@ interface Env {
   PAYOUT_ENABLED?: string;
   PAYOUT_PRIVATE_KEY?: string;
   BSC_RPC_URL?: string;
-  GAME_TEST_MODE?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
@@ -78,11 +77,11 @@ async function playerRow(db:any,tgId:number,tx?:any):Promise<Row|undefined>{
   const r=await (tx??db).execute({sql:"SELECT p.*,(SELECT COUNT(*) FROM players AS joined WHERE joined.referred_by=p.tg_id) AS joined_referral_count,(SELECT COUNT(*) FROM players AS rewarded WHERE rewarded.referred_by=p.tg_id AND rewarded.referral_paid=1) AS paid_referral_count FROM players AS p WHERE p.tg_id=?",args:[tgId]});
   return r.rows[0] as Row|undefined;
 }
-function view(row:Row,testMode=false){
+function view(row:Row){
   const t=today(),sid=seasonId();
   return {tgId:Number(row.tg_id),name:String(row.first_name),username:row.username==null?null:String(row.username),
     coins:Number(row.coins),seasonCoins:Number(row.season_id)===sid?Number(row.season_coins):0,
-    canPlayFree:testMode||row.last_play_date!==t,testMode,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
+    canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
     dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t};
@@ -106,12 +105,7 @@ async function txRun(db:any,fn:(tx:any)=>Promise<any>){
 async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:number,kills:number){
   const used=await tx.execute({sql:"UPDATE game_sessions SET consumed_at=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[Date.now(),String(session.id),tgId]});
   if(used.rowsAffected!==1)throw new Error("Game result already submitted");
-  if(Number(session.uses_extra_play)===3){
-    const player=await playerRow(db,tgId,tx);
-    if(!player)throw new Error("Player not found");
-    console.info("[GameTest] test round consumed without rewards or progression");
-    return {...view(player,true),reward:0,pendingVerification:false,testMode:true};
-  }
+  if(Number(session.uses_extra_play)===3)throw new Error("Legacy test game sessions are disabled. Start a new game.");
   const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
   const cooldown=Number(session.uses_extra_play)>0?Date.now()+AD_COOLDOWN_MS:null;
   await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=CASE WHEN ? IS NULL THEN ad_ready_at ELSE ? END WHERE tg_id=?",
@@ -447,7 +441,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   try{user=await verifyTelegram(body.initData,env);}catch(e){return json({error:e instanceof Error?e.message:"Authentication failed"},401);}
   const db=dbFor(env);
   try{
-    if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:""),env.GAME_TEST_MODE==="true"));
+    if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:"")));
     if(path==="/api/wallet/destination"){
       const result=await db.execute({sql:"SELECT address,asset,network,chain_id AS chainId,updated_at AS updatedAt FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
       return json({destination:result.rows[0]??null});
@@ -500,19 +494,15 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         const now=Date.now();
-        const testMode=env.GAME_TEST_MODE==="true";
-        if(!testMode&&p.last_play_date===today())throw new Error("Your daily free game has already been used. Watch an ad after the cooldown to play again.");
+        if(p.last_play_date===today())throw new Error("Your daily free game has already been used. Watch an ad after the cooldown to play again.");
         const active=await tx.execute({sql:"SELECT id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",args:[user.id,now]});
         if(active.rows.length)throw new Error("A game is already active");
-        if(!testMode){
-          const marked=await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",args:[today(),user.id,today()]});
-          if(marked.rowsAffected!==1)throw new Error("Your daily free game has already been used.");
-        }
+        const marked=await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",args:[today(),user.id,today()]});
+        if(marked.rowsAffected!==1)throw new Error("Your daily free game has already been used.");
         const gameId=crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
-        const sessionType=testMode?3:0;
-        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,created_at,expires_at) VALUES (?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,sessionType,now,expiresAt]});
+        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,created_at,expires_at) VALUES (?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,0,now,expiresAt]});
         return {gameId,enemyTotal,expiresAt};
       });
       return json(result);
