@@ -63,7 +63,7 @@ The deployment workflow can copy the two payout credentials into this Render ser
 - `OFFICIAL_CHANNEL_URL=https://t.me/shooting_master`
 - `OFFICIAL_GROUP_URL=https://t.me/shooting_master_group`
 
-Keep secrets in Render Environment only. Never put them in Git, a frontend `VITE_*` variable, or chat.
+Keep runtime copies of secrets in Render Environment. When the optional GitHub Actions sync is used, GitHub's encrypted Actions secrets are passed only in memory to Render and are never printed. Never put secret values in Git, a frontend `VITE_*` variable, or chat.
 
 ## Remaining cutover checklist
 
