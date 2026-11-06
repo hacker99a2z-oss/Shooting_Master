@@ -61,14 +61,19 @@ function Home() {
       setResult(null);
       void cancelGame({ ...auth(), gameId: id }).then((player) => {
         setPlayer(player);
-        toast.info("Game cancelled because you left the game. No coins were added.");
+        if (player.cancelled) toast.info("Game cancelled because you left the game. No coins were added.");
       }).catch((error) => {
         console.warn("[Game] session cancellation was not acknowledged; expiry still prevents unfinished rewards", error);
       });
     };
+    const cancelWhenHidden = () => {
+      if (document.visibilityState === "hidden") cancelAbandonedGame();
+    };
     window.addEventListener("pagehide", cancelAbandonedGame);
+    document.addEventListener("visibilitychange", cancelWhenHidden);
     return () => {
       window.removeEventListener("pagehide", cancelAbandonedGame);
+      document.removeEventListener("visibilitychange", cancelWhenHidden);
       cancelAbandonedGame();
     };
   }, [setPlayer]);
