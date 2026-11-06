@@ -15,9 +15,9 @@ async function toWebRequest(request) {
   const protocol = request.headers["x-forwarded-proto"] === "https" ? "https" : "http";
   const url = new URL(request.url || "/", protocol + "://" + host);
   const headers = new Headers();
-  for (const [name, value] of Object.entries(request.headers)) {
+  for (const name of ["accept", "content-type", "origin", "user-agent", "x-telegram-bot-api-secret-token"]) {
+    const value = request.headers[name];
     if (typeof value === "string") headers.set(name, value);
-    else if (Array.isArray(value)) headers.set(name, value.join(", "));
   }
 
   const method = request.method || "GET";
