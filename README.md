@@ -1,13 +1,17 @@
 # Shooting Master
 
-Telegram Mini App. The only application folders at repository root are:
+Telegram Mini App with a React/Vite frontend, animated shooter game, Turso database, Telegram authentication, AdsGram reward verification, leaderboard, and optional USDT BEP-20 payouts.
 
-- frontend/ — React/Vite UI, animated shooter game, pages and static assets; deployed to Cloudflare Pages.
-- backend/ — Cloudflare Worker API, Turso schema/migrations and operational scripts; deployed to Cloudflare Workers.
+## Target deployment
 
-## Deployment
+- `frontend/` — static React/Vite app hosted on Cloudflare Pages.
+- `backend/` — shared API, authentication, game and payout logic.
+- Render Free Web Service — Node.js API; while the Free instance is awake it also processes the durable Turso payout queue and recovery tasks.
+- Turso — persistent player, game, withdrawal, payout-event, and queue records.
 
-A push to main runs .github/workflows/deploy.yml. The workflow installs app dependencies, creates payout queues if missing, applies the Turso schema, deploys the Worker, builds the frontend with the Worker API URL, and publishes Pages.
+The Free deployment intentionally uses one Render Web Service only. Render Free does not offer free Background Workers or Cron Jobs. See [RENDER_MIGRATION.md](./RENDER_MIGRATION.md) for current limitations, secrets, safe cutover steps, and the upgrade path.
+
+The existing Cloudflare Worker deployment remains available during migration. Do not disable its webhook/Queue consumer until the Render API, frontend API URL, AdsGram callback, Telegram webhook, and any pending payout jobs have been safely switched and verified.
 
 Add these GitHub Actions repository secrets:
 
