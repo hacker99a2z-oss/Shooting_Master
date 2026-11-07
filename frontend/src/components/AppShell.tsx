@@ -1,13 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { Gamepad2, Trophy, Users, Wallet } from "lucide-react";
+import { Home, Pickaxe, Trophy, Users, Wallet, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { usePlayer } from "@/hooks/use-player";
 import { formatGold } from "@/lib/mining";
 import { GoldNugget } from "@/components/GoldNugget";
 
 const tabs = [
-  { to: "/", label: "Play", icon: Gamepad2 },
-  { to: "/leaderboard", label: "Top", icon: Trophy },
+  { to: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { to: "/refer", label: "Refer", icon: Users },
   { to: "/withdraw", label: "Wallet", icon: Wallet },
 ] as const;
@@ -16,44 +15,50 @@ export function AppShell({ title, children, showProfile = false, action }: { tit
   const { data } = usePlayer();
   const initial = (data?.name || "?").charAt(0).toUpperCase();
   return (
-    <div className="app-column mx-auto flex min-h-dvh max-w-md flex-col text-foreground">
-      <header className="px-5 pt-5">
+    <div className="app-column mine-app-shell mx-auto flex min-h-dvh max-w-md flex-col text-foreground">
+      <header className="mine-header px-4 pt-3">
         {showProfile && (
-        <div className="flex items-center gap-3 rounded-3xl border bg-card p-3 text-card-foreground shadow-card">
-          {data?.photoUrl ? (
-            <img src={data.photoUrl} alt={data.name} className="h-12 w-12 rounded-full border-2 border-primary object-cover" />
-          ) : (
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-coral font-display text-xl text-accent-foreground">{initial}</div>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-lg leading-tight">{data?.name ?? "…"}</p>
-            <p className="truncate text-xs text-muted-foreground">ID: {data?.tgId ?? "…"}</p>
+          <div className="profile-wood-card">
+            {data?.photoUrl ? (
+              <img src={data.photoUrl} alt={data.name} className="profile-wood-avatar" />
+            ) : (
+              <div className="profile-wood-avatar profile-avatar-fallback">{initial}</div>
+            )}
+            <div className="profile-player-meta">
+              <p className="profile-player-name">{data?.name ?? "Loading…"}</p>
+              <p className="profile-player-id">ID: {data?.tgId ?? "…"}</p>
+            </div>
+            <div className="profile-gold-balance">
+              <span className="profile-gold-caption">GOLD BALANCE</span>
+              <span className="profile-gold-amount"><GoldNugget />{data ? formatGold(data.gold ?? 0) : "…"}</span>
+            </div>
+            <Link to="/withdraw" className="profile-add-gold" aria-label="Open wallet">
+              <Plus className="h-5 w-5" />
+            </Link>
           </div>
-          <div className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
-            <GoldNugget className="h-5 w-5" />
-            <span className="font-display text-lg tabular-nums">{data ? formatGold(data.gold ?? 0) : "…"}</span>
-          </div>
-        </div>
         )}
         {(title || action) && (
-        <div className={`flex items-center justify-between gap-3 ${showProfile ? "mt-4" : ""}`}>
-          {title && <h1 className="text-2xl font-semibold text-foreground">{title}</h1>}
-          {action}
-        </div>
+          <div className={`flex items-center justify-between gap-3 ${showProfile ? "mt-4" : ""}`}>
+            {title && <h1 className="text-2xl font-semibold text-foreground">{title}</h1>}
+            {action}
+          </div>
         )}
       </header>
-      <main className="flex-1 px-5 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-3 text-foreground">{children}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="grid grid-cols-4 rounded-2xl border bg-card p-1.5 text-card-foreground shadow-card backdrop-blur">
+      <main className="mine-main flex-1 px-4 pb-[calc(7.6rem+env(safe-area-inset-bottom))] pt-4 text-foreground">{children}</main>
+      <nav className="mine-bottom-nav fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md px-3 pb-[calc(0.65rem+env(safe-area-inset-bottom))]" aria-label="Main navigation">
+        <div className="mine-bottom-nav-inner grid grid-cols-5">
+          <Link to="/" activeOptions={{ exact: true }} className="mine-nav-item">
+            <Home className="h-5 w-5" />
+            <span>Home</span>
+          </Link>
+          <Link to="/" hash="mining-area" className="mine-nav-item">
+            <Pickaxe className="h-5 w-5" />
+            <span>Mine</span>
+          </Link>
           {tabs.map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              activeOptions={{ exact: true }}
-              className="nav-tab flex flex-col items-center gap-0.5 rounded-xl py-2 text-xs text-muted-foreground transition-colors data-[status=active]:bg-gold data-[status=active]:text-primary-foreground"
-            >
+            <Link key={to} to={to} activeOptions={{ exact: true }} className="mine-nav-item">
               <Icon className="h-5 w-5" />
-              {label}
+              <span>{label}</span>
             </Link>
           ))}
         </div>
