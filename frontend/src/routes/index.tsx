@@ -230,14 +230,14 @@ function Home() {
         <div className="energy-meter">
           <div className="energy-meter-heading">
             <span>Energy</span>
-            <span className="energy-meter-bonus">{dailyClaimed ? \`+\${ENERGY_PER_AD} per ad\` : \`+\${ENERGY_PER_GIVE} daily bonus\`}</span>
+            <span className="energy-meter-bonus">{dailyClaimed ? `+${ENERGY_PER_AD} per ad` : `+${ENERGY_PER_GIVE} daily bonus`}</span>
           </div>
           <div className="energy-meter-value">
             <strong>{me ? energy.toLocaleString() : "…"}</strong>
             <span>AVAILABLE</span>
           </div>
-          <div className="energy-track" aria-label={\`\${energy} available energy\`}>
-            <span style={{ width: \`\${Math.min(100, Math.max(0, (energy / MINE_CAPACITY) * 100))}%\` }} />
+          <div className="energy-track" aria-label={`${energy} available energy`}>
+            <span style={{ width: `${Math.min(100, Math.max(0, (energy / MINE_CAPACITY) * 100))}%` }} />
           </div>
         </div>
         <button
@@ -267,7 +267,7 @@ function Home() {
 
         <div className="mine-stage">
           <GoldMiner mining={mining} />
-          <div className={\`mine-status-pill \${mining ? "active" : ""}\`}>
+          <div className={`mine-status-pill ${mining ? "active" : ""}`}>
             <span />
             {mining ? "MINER WORKING" : "MINER RESTING"}
           </div>
@@ -285,8 +285,8 @@ function Home() {
               <button
                 type="button"
                 className="miner-refuel-button"
-                aria-label={\`Give \${ENERGY_PER_GIVE} energy to miner\`}
-                title={\`Give \${ENERGY_PER_GIVE} energy\`}
+                aria-label={`Give ${ENERGY_PER_GIVE} energy to miner`}
+                title={`Give ${ENERGY_PER_GIVE} energy`}
                 disabled={mineBusy || !me || energy < ENERGY_PER_GIVE || minerFull}
                 onClick={give}
               >
@@ -294,9 +294,9 @@ function Home() {
               </button>
             </div>
             <div className="miner-energy-track">
-              <span style={{ width: \`\${Math.min(100, (live.energy / MINE_CAPACITY) * 100)}%\` }} />
+              <span style={{ width: `${Math.min(100, (live.energy / MINE_CAPACITY) * 100)}%` }} />
             </div>
-            <span className="mine-stat-hint">{minerFull ? "Miner is full" : energy < ENERGY_PER_GIVE ? "Get energy to refill" : \`+ \${ENERGY_PER_GIVE} energy to mine\`}</span>
+            <span className="mine-stat-hint">{minerFull ? "Miner is full" : energy < ENERGY_PER_GIVE ? "Get energy to refill" : `+ ${ENERGY_PER_GIVE} energy to mine`}</span>
           </div>
 
           <div className="mine-stat-card">
@@ -304,7 +304,7 @@ function Home() {
             <strong className="mine-stat-value">{mining ? clock(nextGoldMs) : "2:00"}</strong>
             <span className="mine-stat-hint">{ENERGY_PER_CYCLE} energy / cycle</span>
             <div className="mine-cycle-track">
-              <span style={{ width: \`\${(cycleElapsed / MINE_CYCLE_MS) * 100}%\` }} />
+              <span style={{ width: `${(cycleElapsed / MINE_CYCLE_MS) * 100}%` }} />
             </div>
           </div>
 
@@ -312,7 +312,7 @@ function Home() {
             <span className="mine-stat-label"><Pickaxe className="h-3.5 w-3.5" /> Gold Reward</span>
             <strong className="mine-stat-value">{formatGold(MILLI_GOLD_PER_CYCLE)}</strong>
             <span className="mine-stat-hint">Gold per cycle</span>
-            <span className="mine-stat-runway">{mining ? \`Run time \${clock(remainingMs)}\` : "2 min per 10 energy"}</span>
+            <span className="mine-stat-runway">{mining ? `Run time ${clock(remainingMs)}` : "2 min per 10 energy"}</span>
           </div>
         </div>
 
@@ -320,7 +320,7 @@ function Home() {
           type="button"
           disabled={mineBusy || live.pending < 1}
           onClick={claimGold}
-          aria-label={\`Claim \${formatGold(live.pending)} gold\`}
+          aria-label={`Claim ${formatGold(live.pending)} gold`}
           className="claim-gold-button"
         >
           <span className="claim-gold-coins"><GoldNugget /><GoldNugget /><GoldNugget /></span>
