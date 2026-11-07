@@ -244,25 +244,31 @@
 @keyframes energy-zap { 0%,88%,100% { transform: scale(1) rotate(0) } 92% { transform: scale(1.15) rotate(-8deg) } 96% { transform: scale(.95) rotate(6deg) } }
 @utility animate-zap { animation: energy-zap 3s ease-in-out infinite; }
 
-/* Animated mining scene (overlays are positioned in % of the illustration) */
+/* Animated mining scene: three pose frames (raise -> overhead -> strike) swap in a loop.
+   Overlays are positioned in % of the illustration. */
 .mine-scene { background-color: var(--background); }
-.mine-art { position: absolute; top: 0; bottom: 0; left: 50%; aspect-ratio: 723 / 418; transform: translateX(-56%); }
-.mine-art img { width: 100%; height: 100%; display: block; transition: filter .6s ease; }
+.mine-art { position: absolute; top: 0; bottom: 0; left: 50%; aspect-ratio: 1072 / 624; transform: translateX(-48%); }
+.mine-art img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; transition: filter .6s ease; }
+.mine-art .f-mid, .mine-art .f-strike { opacity: 0; }
+.mine-scene:not(.is-mining) .mine-art .f-strike { opacity: 1; }
 .mine-scene:not(.is-mining) .mine-art img { filter: saturate(.55) brightness(.7); }
-.mine-scene.is-mining .mine-art { animation: mine-shake .9s ease-in-out infinite; }
+.mine-scene.is-mining .mine-art { animation: mine-shake 1.2s linear infinite; }
+.mine-scene.is-mining .f-mid { animation: frame-mid 1.2s linear infinite; }
+.mine-scene.is-mining .f-strike { animation: frame-strike 1.2s linear infinite; }
 .mine-glow { position: absolute; border-radius: 999px; pointer-events: none; transform: translate(-50%,-50%);
   background: radial-gradient(circle, color-mix(in oklab, var(--gold) 75%, transparent) 0%, transparent 70%); mix-blend-mode: screen; }
 .mine-lantern { width: 22%; aspect-ratio: 1; animation: lantern-flicker 2.6s ease-in-out infinite; }
 .mine-lantern.b { animation-delay: 1.3s; }
-.mine-flash { width: 26%; aspect-ratio: 1; opacity: 0; }
-.mine-scene.is-mining .mine-flash { animation: strike-flash .9s ease-out infinite; }
-.mine-chip { position: absolute; width: 2.6%; aspect-ratio: 1; border-radius: 2px; background: var(--gradient-gold); opacity: 0; pointer-events: none; }
-.mine-scene.is-mining .mine-chip { animation: chip-fly 1.8s ease-out infinite; }
-.mine-chip.c2 { animation-delay: .45s !important; } .mine-chip.c3 { animation-delay: .9s !important; } .mine-chip.c4 { animation-delay: 1.35s !important; }
-@keyframes mine-shake { 0%,40%,60%,100% { transform: translateX(-56%) } 46% { transform: translateX(-56.6%) translateY(1px) } 52% { transform: translateX(-55.5%) } }
+.mine-flash { width: 28%; aspect-ratio: 1; opacity: 0; }
+.mine-scene.is-mining .mine-flash { animation: strike-flash 1.2s ease-out infinite; }
+.mine-chip { position: absolute; width: 2.4%; aspect-ratio: 1; border-radius: 2px; background: var(--gradient-gold); opacity: 0; pointer-events: none; }
+.mine-scene.is-mining .mine-chip { animation: chip-fly 1.2s ease-out infinite; }
+@keyframes frame-mid { 0%,37.9% { opacity: 0 } 38%,49.9% { opacity: 1 } 50%,84.9% { opacity: 0 } 85%,91.9% { opacity: 1 } 92%,100% { opacity: 0 } }
+@keyframes frame-strike { 0%,49.9% { opacity: 0 } 50%,84.9% { opacity: 1 } 85%,100% { opacity: 0 } }
+@keyframes mine-shake { 0%,49.9%,58%,100% { transform: translateX(-48%) } 51% { transform: translateX(-48.8%) translateY(2px) } 54% { transform: translateX(-47.4%) translateY(-1px) } }
 @keyframes lantern-flicker { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(1) } 40% { opacity: .85; transform: translate(-50%,-50%) scale(1.08) } 70% { opacity: .65 } }
-@keyframes strike-flash { 0%,38% { opacity: 0; transform: translate(-50%,-50%) scale(.3) } 46% { opacity: 1; transform: translate(-50%,-50%) scale(1) } 80%,100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5) } }
-@keyframes chip-fly { 0%,20% { opacity: 0; transform: translate(0,0) rotate(0) } 30% { opacity: 1 } 85% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(220deg) } 100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 14px)) rotate(260deg) } }
+@keyframes strike-flash { 0%,49.9% { opacity: 0; transform: translate(-50%,-50%) scale(.3) } 53% { opacity: 1; transform: translate(-50%,-50%) scale(1) } 75%,100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5) } }
+@keyframes chip-fly { 0%,49.9% { opacity: 0; transform: translate(0,0) rotate(0) } 53% { opacity: 1 } 90% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(220deg) } 100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 14px)) rotate(260deg) } }
 
 /* Small gold nugget icon */
 .nugget-icon .nugget { fill: var(--gold); }
