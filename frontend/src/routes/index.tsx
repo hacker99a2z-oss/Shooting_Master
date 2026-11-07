@@ -1,24 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Play, Tv, Trophy, Timer, Crosshair, Gauge, Target } from "lucide-react";
+import { Gift, Tv, Timer, Zap, Pickaxe, Hourglass } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { ArcheryGame } from "@/components/ArcheryGame";
-import { SensitivitySettings } from "@/components/SensitivitySettings";
+import { GoldMiner } from "@/components/GoldMiner";
+import { GoldNugget } from "@/components/GoldNugget";
 import { usePlayer } from "@/hooks/use-player";
-import { startGame, startGameAfterAd, finishGame, cancelGame, startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyBonus } from "@/lib/api.functions";
+import { startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyEnergy, giveMinerEnergy, claimMinedGold, type AdPlayStatus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
-import { COINS_PER_KILL, MIN_ENEMIES, MAX_ENEMIES, DAILY_GAMES_GOAL, BONUS_MIN_COINS, BONUS_MAX_COINS, coinsToUsd } from "@/lib/rules";
-import rangeBg from "@/assets/archery-range.jpg";
-
+import { ENERGY_PER_AD, ENERGY_PER_GIVE, ENERGY_PER_CYCLE, MINE_CAPACITY, MINE_CYCLE_MS, formatGold, mineRemainingMs, settleMine } from "@/lib/mining";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Archery Master — Play & Earn" },
-      { name: "description", content: "Aim, draw your bow and hit 9–12 targets. Earn 10 coins for every target you hit." },
-      { property: "og:title", content: "Archery Master — Play & Earn" },
-      { property: "og:description", content: "Hit 9–12 archery targets per round and earn 10 coins for each one." },
+      { title: "Gold Mine — Power Your Miner with Energy" },
+      { name: "description", content: "Claim your daily bonus, watch ads for energy and give it to your miner to dig real gold every 2 minutes." },
+      { property: "og:title", content: "Gold Mine — Power Your Miner with Energy" },
+      { property: "og:description", content: "Collect energy, feed your gold miner and claim the gold it digs up." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -26,112 +24,50 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+const PENDING_AD_KEY = "shooting-master.pending-ad-session";
+
+function clock(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+
 function Home() {
-  const { data: me, isLoading, error, setPlayer } = usePlayer();
-  const [gameId, setGameId] = useState("");
-  const [enemyTotal, setEnemyTotal] = useState(9);
-  const [playing, setPlaying] = useState(false);
-  const [result, setResult] = useState<{ score: number; reward: number; kills: number; pendingVerification?: boolean } | null>(null);
+  const { data: me, isLoading, error, setPlayer, dataUpdatedAt } = usePlayer();
   const [busy, setBusy] = useState(false);
+  const [mineBusy, setMineBusy] = useState(false);
   const [pendingAdSessionId, setPendingAdSessionId] = useState(() => {
-    try { return localStorage.getItem("shooting-master.pending-ad-session") || ""; }
+    try { return localStorage.getItem(PENDING_AD_KEY) || ""; }
     catch { return ""; }
   });
-  const activeGameIdRef = useRef("");
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNowMs(Date.now()), 1000); return () => clearInterval(i); }, []);
-  const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - nowMs) / 1000)) : 0;
-  const canPlayFree = Boolean(me?.canPlayFree);
+  // Timers follow the server clock: the offset is measured each time fresh player data arrives.
+  const offset = me?.serverNow && dataUpdatedAt ? me.serverNow - dataUpdatedAt : 0;
+  const serverNow = nowMs + offset;
+  const waitSec = me ? Math.max(0, Math.ceil((me.adReadyAt - serverNow) / 1000)) : 0;
+  const dailyClaimed = Boolean(me?.energyBonusClaimedToday);
 
   useEffect(() => {
     try {
-      if (pendingAdSessionId) localStorage.setItem("shooting-master.pending-ad-session", pendingAdSessionId);
-      else localStorage.removeItem("shooting-master.pending-ad-session");
+      if (pendingAdSessionId) localStorage.setItem(PENDING_AD_KEY, pendingAdSessionId);
+      else localStorage.removeItem(PENDING_AD_KEY);
     } catch { /* local storage may be disabled in a restricted webview */ }
   }, [pendingAdSessionId]);
 
-  useEffect(() => {
-    const cancelAbandonedGame = () => {
-      const id = activeGameIdRef.current;
-      if (!id) return;
-      activeGameIdRef.current = "";
-      setPlaying(false);
-      setGameId("");
-      setResult(null);
-      void cancelGame({ ...auth(), gameId: id }).then((player) => {
-        setPlayer(player);
-        if (player.cancelled) toast.info("Game cancelled because you left the game. No coins were added.");
-      }).catch((error) => {
-        console.warn("[Game] session cancellation was not acknowledged; expiry still prevents unfinished rewards", error);
-      });
-    };
-    const cancelWhenHidden = () => {
-      if (document.visibilityState === "hidden") cancelAbandonedGame();
-    };
-    window.addEventListener("pagehide", cancelAbandonedGame);
-    document.addEventListener("visibilitychange", cancelWhenHidden);
-    return () => {
-      window.removeEventListener("pagehide", cancelAbandonedGame);
-      document.removeEventListener("visibilitychange", cancelWhenHidden);
-      cancelAbandonedGame();
-    };
-  }, [setPlayer]);
-
-  const beginDailyGame = async () => {
-    if (busy || playing || !canPlayFree) return;
-    setBusy(true);
-    try {
-      const game = await startGame(auth());
-      setGameId(game.gameId);
-      activeGameIdRef.current = game.gameId;
-      setEnemyTotal(game.enemyTotal);
-      setResult(null);
-      haptic("medium");
-      setPlaying(true);
-    } catch (e: any) {
-      toast.error(e.message || "Unable to start your daily free game");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onEnd = async (score: number, kills: number) => {
-    activeGameIdRef.current = "";
-    setPlaying(false);
-    try {
-      const p = await finishGame({ ...auth(), gameId, score, kills });
-      setPlayer(p);
-      setResult({ score, reward: p.reward, kills, pendingVerification: Boolean(p.pendingVerification) });
-      if (p.pendingVerification) toast.info("Game finished. Coins will be added automatically after AdsGram server verification.");
-    } catch (e: any) {
-      const cancelled = await cancelGame({ ...auth(), gameId }).catch(() => null);
-      if (cancelled) setPlayer(cancelled);
-      toast.error(e.message || "Game result could not be saved. The unfinished session was cancelled.");
-    }
-  };
-
-  const launchVerifiedAdGame = useCallback(async (adSessionId: string) => {
-    const status = await getAdPlayStatus({ ...auth(), adSessionId });
-    if (!status.verified) {
-      throw new Error("AdsGram has not confirmed this ad yet. The game stays locked until the server callback arrives.");
-    }
+  const onAdVerified = useCallback((status: AdPlayStatus) => {
     setPlayer(status);
-    const game = await startGameAfterAd({ ...auth(), adSessionId });
     setPendingAdSessionId("");
-    setGameId(game.gameId);
-    activeGameIdRef.current = game.gameId;
-    setEnemyTotal(game.enemyTotal);
-    setResult(null);
     haptic("success");
-    setPlaying(true);
-    toast.success("AdsGram verified the reward. Starting your game!");
+    toast.success(`AdsGram verified the reward. +${ENERGY_PER_AD} Energy!`);
   }, [setPlayer]);
 
   // Keep checking a pending session after the SDK reports a full view and after a
-  // Telegram WebView is reopened. Only the protected server Reward URL can unlock it.
+  // Telegram WebView is reopened. Only the protected server Reward URL adds energy.
   useEffect(() => {
-    if (!pendingAdSessionId || busy || playing) return;
+    if (!pendingAdSessionId || busy) return;
     let stopped = false;
     let checking = false;
     const poll = async () => {
@@ -140,15 +76,16 @@ function Home() {
       try {
         const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAdSessionId });
         if (stopped) return;
-        setPlayer(status);
-        if (status.verified) {
-          await launchVerifiedAdGame(pendingAdSessionId);
-        } else if (status.expired) {
-          setPendingAdSessionId("");
-          toast.error("AdsGram did not confirm this ad before the session expired. Please watch a new ad.");
+        if (status.verified) onAdVerified(status);
+        else {
+          setPlayer(status);
+          if (status.expired) {
+            setPendingAdSessionId("");
+            toast.error("AdsGram did not confirm this ad before the session expired. Please watch a new ad.");
+          }
         }
-      } catch (error) {
-        if (!stopped) console.warn("[AdsGram] server verification remains pending", error);
+      } catch (e) {
+        if (!stopped) console.warn("[AdsGram] server verification remains pending", e);
       } finally {
         checking = false;
       }
@@ -156,21 +93,37 @@ function Home() {
     void poll();
     const timer = window.setInterval(() => void poll(), 1500);
     return () => { stopped = true; window.clearInterval(timer); };
-  }, [pendingAdSessionId, busy, playing, launchVerifiedAdGame, setPlayer]);
+  }, [pendingAdSessionId, busy, onAdVerified, setPlayer]);
+
+  const claimBonus = async () => {
+    if (busy || dailyClaimed) return;
+    setBusy(true);
+    try {
+      const p = await claimDailyEnergy(auth());
+      setPlayer(p);
+      haptic("success");
+      toast.success(`Daily bonus claimed: +${p.bonusEnergy} Energy!`);
+    } catch (e: any) {
+      toast.error(e.message || "Could not claim the daily bonus");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const checkPendingAd = async () => {
-    if (busy || playing || !pendingAdSessionId) return;
+    if (busy || !pendingAdSessionId) return;
     setBusy(true);
     try {
       const status = await getAdPlayStatus({ ...auth(), adSessionId: pendingAdSessionId });
-      setPlayer(status);
-      if (status.verified) {
-        await launchVerifiedAdGame(pendingAdSessionId);
-      } else if (status.expired) {
-        setPendingAdSessionId("");
-        toast.error("This AdsGram session expired without a server reward. Please watch a new ad.");
-      } else {
-        toast.info("Waiting for AdsGram's server callback. The game will start automatically as soon as it is verified.");
+      if (status.verified) onAdVerified(status);
+      else {
+        setPlayer(status);
+        if (status.expired) {
+          setPendingAdSessionId("");
+          toast.error("This AdsGram session expired without a server reward. Please watch a new ad.");
+        } else {
+          toast.info("Waiting for AdsGram's server callback. Energy is added automatically as soon as it is verified.");
+        }
       }
     } catch (e: any) {
       toast.error(e.message || "Could not check AdsGram confirmation");
@@ -180,7 +133,7 @@ function Home() {
   };
 
   const watchAd = async () => {
-    if (busy || playing || waitSec > 0 || canPlayFree || pendingAdSessionId) return;
+    if (busy || waitSec > 0 || !dailyClaimed || pendingAdSessionId) return;
     setBusy(true);
     let adSessionId = "";
     try {
@@ -193,33 +146,31 @@ function Home() {
 
       if (!adResult.done || adResult.error) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
-        if (cancelled?.verified) {
-          await launchVerifiedAdGame(adSessionId);
-        } else {
+        if (cancelled?.verified) onAdVerified(cancelled);
+        else {
+          if (cancelled) setPlayer(cancelled);
           setPendingAdSessionId("");
-          toast.info("The ad was skipped or not completed. No extra game was unlocked.");
+          toast.info("The ad was skipped or not completed. No energy was added.");
         }
         return;
       }
 
       console.info("[AdsGram] SDK show() confirmed a completed rewarded view; waiting for the server Reward URL", { state: adResult.state || "destroy" });
       const confirmation = await grantAdPlay({ ...auth(), adSessionId });
-      setPlayer(confirmation);
-      if (confirmation.verified) {
-        await launchVerifiedAdGame(adSessionId);
-      } else {
-        toast.info("Ad fully viewed. Waiting for AdsGram's server-to-server Reward URL verification. The game starts automatically after confirmation.");
+      if (confirmation.verified) onAdVerified(confirmation);
+      else {
+        setPlayer(confirmation);
+        toast.info("Ad fully viewed. Waiting for AdsGram's server verification. Energy is added automatically after confirmation.");
       }
     } catch (e: any) {
-      console.error("[AdsGram] watch-to-game flow failed", {
+      console.error("[AdsGram] watch-for-energy flow failed", {
         hasAdSession: Boolean(adSessionId),
         message: e?.message || String(e),
       });
       if (adSessionId) {
         const cancelled = await cancelAdPlay({ ...auth(), adSessionId }).catch(() => null);
-        if (cancelled?.verified) {
-          await launchVerifiedAdGame(adSessionId);
-        } else {
+        if (cancelled?.verified) onAdVerified(cancelled);
+        else {
           setPendingAdSessionId("");
           toast.error(e?.message || "Ad could not be loaded. Please try again.");
         }
@@ -231,107 +182,147 @@ function Home() {
     }
   };
 
-  const claimBonus = async () => {
-    setBusy(true);
+  // Live mining view, recalculated every second from the server's last mining state.
+  const mineState = me?.mine ? { energy: me.mine.energy, updatedAt: me.mine.updatedAt, pending: me.mine.pendingGold } : { energy: 0, updatedAt: serverNow, pending: 0 };
+  const live = settleMine(mineState, serverNow);
+  const remainingMs = mineRemainingMs(mineState, serverNow);
+  const mining = live.energy >= ENERGY_PER_CYCLE;
+  const cycleElapsed = mining ? Math.min(MINE_CYCLE_MS, serverNow - live.updatedAt) : 0;
+  const nextGoldMs = mining ? MINE_CYCLE_MS - cycleElapsed : 0;
+  const energy = me?.energy ?? 0;
+  const minerFull = live.energy + ENERGY_PER_GIVE > MINE_CAPACITY;
+
+  const give = async () => {
+    if (mineBusy) return;
+    setMineBusy(true);
     try {
-      const p = await claimDailyBonus(auth());
+      const p = await giveMinerEnergy(auth());
       setPlayer(p);
-      haptic("success");
-      toast.success(`Bonus claimed: $${coinsToUsd(p.bonus).toFixed(3)}!`);
+      haptic("medium");
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || "Could not give energy to your miner");
     } finally {
-      setBusy(false);
+      setMineBusy(false);
     }
   };
 
-  const daily = me?.dailyGames ?? 0;
+  const claimGold = async () => {
+    if (mineBusy) return;
+    setMineBusy(true);
+    try {
+      const p = await claimMinedGold(auth());
+      setPlayer(p);
+      haptic("success");
+      toast.success(`Claimed ${formatGold(p.claimedGold)} Gold!`);
+    } catch (e: any) {
+      toast.error(e.message || "Could not claim your gold");
+    } finally {
+      setMineBusy(false);
+    }
+  };
 
   return (
-    <AppShell title="Archery Range" showProfile action={<SensitivitySettings />}>
-      {playing && <ArcheryGame onEnd={onEnd} targetTotal={enemyTotal} />}
-
-      <section className="relative overflow-hidden rounded-3xl border border-primary/30 shadow-card">
-        <img src={rangeBg} alt="Cartoon archery range" className="absolute inset-0 h-full w-full object-cover object-center" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/50 to-background" />
-        <div className="relative flex min-h-[340px] flex-col justify-end p-5 pb-12">
-          <span className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-destructive-foreground" /> Targets are up
+    <AppShell showProfile>
+      <section className="energy-card relative mt-1 overflow-hidden rounded-3xl border p-5 shadow-card">
+        <Zap aria-hidden="true" className="pointer-events-none absolute -right-6 -top-4 h-36 w-36 rotate-12 fill-current text-energy opacity-10" />
+        <div className="relative flex items-center gap-4">
+          <span className="energy-badge flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-energy text-energy-foreground shadow-energy">
+            <Zap className="h-9 w-9 fill-current animate-zap" />
           </span>
-          <h2 className="text-4xl leading-none drop-shadow">Hit {MIN_ENEMIES}–{MAX_ENEMIES} targets.<br /><span className="text-gold-gradient">{`+${COINS_PER_KILL} coins each.`}</span></h2>
-          <p className="mt-2 text-sm text-foreground/80">Aim, draw your bow and hit each target before it disappears.</p>
-
-          <p className="mt-4 text-center text-xs font-medium text-foreground/90">{canPlayFree ? "Your daily free game is ready. After it, watch a rewarded ad for each extra game." : "Daily free game used. Watch an ad to play again; the game starts only after AdsGram confirms the reward on the server."}</p>
-          <div className="mt-2">
-            {isLoading ? (
-              <div className="h-16 animate-pulse rounded-2xl bg-muted" />
-            ) : error ? (
-              <p className="text-sm text-destructive">{(error as Error).message}</p>
-            ) : canPlayFree ? (
-              <button
-                disabled={busy}
-                onClick={beginDailyGame}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform disabled:opacity-70"
-              >
-                <Play className="h-6 w-6 fill-current" />
-                {busy ? "Starting game…" : "Play Daily Free Game"}
-              </button>
-            ) : (
-              <button
-                disabled={busy || waitSec > 0}
-                onClick={pendingAdSessionId ? checkPendingAd : watchAd}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-coral py-4 font-display text-xl text-accent-foreground shadow-card active:scale-95 transition-transform disabled:opacity-70"
-              >
-                {waitSec > 0 ? <Timer className="h-6 w-6" /> : <Tv className="h-6 w-6" />}
-                {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Waiting for AdsGram…" : pendingAdSessionId ? "Check AdsGram confirmation" : "Watch ad to play again"}
-              </button>
-            )}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Your Energy</p>
+            <p className="font-display text-5xl leading-none tabular-nums text-energy drop-shadow">{me ? energy.toLocaleString() : "…"}</p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5">
+            <span className="rounded-full border bg-background/50 px-2.5 py-1 text-[11px] font-semibold text-energy">+{ENERGY_PER_AD} / ad</span>
+            <span className={`rounded-full border bg-background/50 px-2.5 py-1 text-[11px] font-semibold ${dailyClaimed ? "text-success" : "text-primary"}`}>{dailyClaimed ? "Bonus ✓" : "Bonus ready"}</span>
           </div>
         </div>
+
+        <div className="relative mt-4">
+          {isLoading ? (
+            <div className="h-16 animate-pulse rounded-2xl bg-muted" />
+          ) : error ? (
+            <p className="text-sm text-destructive">{(error as Error).message}</p>
+          ) : !dailyClaimed ? (
+            <button
+              disabled={busy}
+              onClick={claimBonus}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gold py-4 font-display text-2xl text-primary-foreground shadow-glow animate-pulse-ring active:scale-95 transition-transform disabled:opacity-70"
+            >
+              <Gift className="h-6 w-6" />
+              {busy ? "Claiming…" : "Claim Daily Bonus"}
+            </button>
+          ) : (
+            <button
+              disabled={busy || waitSec > 0}
+              onClick={pendingAdSessionId ? checkPendingAd : watchAd}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-coral py-4 font-display text-xl text-accent-foreground shadow-card active:scale-95 transition-transform disabled:opacity-70"
+            >
+              {waitSec > 0 ? <Timer className="h-6 w-6" /> : <Tv className="h-6 w-6" />}
+              {waitSec > 0 ? `Next ad in ${Math.floor(waitSec / 60)}:${String(waitSec % 60).padStart(2, "0")}` : busy ? "Waiting for AdsGram…" : pendingAdSessionId ? "Check AdsGram confirmation" : "Watch Ads to get more Energy"}
+            </button>
+          )}
+        </div>
+        <p className="relative mt-2 text-center text-xs text-muted-foreground">
+          {dailyClaimed ? `+${ENERGY_PER_AD} Energy for every ad. Next ad unlocks 3 minutes after each one.` : "Claim your free daily bonus, then watch ads for more energy."}
+        </p>
       </section>
 
-      {result && (
-        <section className={`mt-4 rounded-3xl border p-5 text-center shadow-card animate-in zoom-in-95 fade-in ${result.reward > 0 ? "border-primary/50 bg-card shadow-glow" : "border-destructive/40 bg-card"}`}>
-          {result.reward > 0 ? <Trophy className="mx-auto h-9 w-9 text-primary" /> : <Target className="mx-auto h-9 w-9 text-destructive" />}
-          <p className="mt-1 font-display text-2xl">{result.reward > 0 ? `${result.kills} targets hit!` : "No targets hit"}</p>
-          <p className="text-sm text-muted-foreground">Score {result.score}</p>
-          {result.pendingVerification ? (
-            <p className="mt-2 text-sm text-amber-500">Ad verification pending. Your earned coins will be added after server confirmation.</p>
-          ) : (
-            <p className={`mt-1 font-display text-3xl ${result.reward > 0 ? "text-gold-gradient" : "text-muted-foreground"}`}>+{result.reward} coins</p>
-          )}
-          {result.reward === 0 && <p className="mt-1 text-xs text-muted-foreground">Hit targets to earn {COINS_PER_KILL} coins each.</p>}
-        </section>
-      )}
+      <section className="mt-4 rounded-3xl border bg-card p-5 shadow-card">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl">Your Mining Area</h2>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${mining ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
+            <span className={`h-2 w-2 rounded-full ${mining ? "animate-pulse bg-success" : "bg-muted-foreground"}`} />
+            {mining ? "Mining" : "Resting"}
+          </span>
+        </div>
 
-      <section className="mt-4 rounded-3xl border bg-card p-4 shadow-card">
-        <h3 className="mb-3 text-lg">How to win</h3>
-        <ul className="space-y-3 text-sm">
-          <Tip icon={<Crosshair className="h-4 w-4" />} text="Hold the bow button (or the field), drag to aim, let go to shoot. Draw fully so the arrow lands on the sight." />
-          <Tip icon={<Gauge className="h-4 w-4" />} text="The first target stays 4 seconds, the last only 1 second. Later targets move and dodge." />
-          <Tip icon={<Target className="h-4 w-4" />} text={`Each round has ${MIN_ENEMIES}–${MAX_ENEMIES} targets. +${COINS_PER_KILL} coins for every target you hit.`} />
-          <Tip icon={<Timer className="h-4 w-4" />} text="One free game every day. After that, watch ads to play more." />
-        </ul>
+        <div className="mt-3 grid grid-cols-[1fr_7.5rem] gap-2.5">
+          <div className="relative min-h-[13.5rem] overflow-hidden rounded-2xl border shadow-card">
+            <GoldMiner mining={mining} />
+          </div>
+
+          <div className="flex flex-col justify-between gap-2 rounded-2xl border bg-secondary p-2.5 text-center">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Miner Energy</p>
+              <p className="mt-0.5 flex items-center justify-center gap-1 font-display text-lg leading-none tabular-nums">
+                <Zap className="h-4 w-4 fill-current text-energy" />{live.energy}/{MINE_CAPACITY}
+              </p>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-energy transition-all" style={{ width: `${(live.energy / MINE_CAPACITY) * 100}%` }} />
+              </div>
+            </div>
+            <div>
+              <p className="flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><Hourglass className="h-3 w-3" />Time left</p>
+              <p className="font-display text-lg leading-tight tabular-nums">{clock(remainingMs)}</p>
+              <p className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground"><Pickaxe className="h-3 w-3" />{mining ? `+0.001 in ${clock(nextGoldMs)}` : "Not mining"}</p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-gold" style={{ width: `${(cycleElapsed / MINE_CYCLE_MS) * 100}%` }} />
+              </div>
+            </div>
+            <button
+              disabled={mineBusy || live.pending < 1}
+              onClick={claimGold}
+              aria-label={`Claim ${formatGold(live.pending)} gold`}
+              className="flex w-full items-center justify-center gap-1 rounded-xl bg-gold py-2.5 font-display text-lg tabular-nums text-primary-foreground shadow-glow active:scale-95 transition-transform disabled:opacity-60"
+            >
+              <GoldNugget className="on-gold h-4 w-4" />
+              {formatGold(live.pending)}
+            </button>
+          </div>
+        </div>
+
+        <button
+          disabled={mineBusy || !me || energy < ENERGY_PER_GIVE || minerFull}
+          onClick={give}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-energy py-3.5 font-display text-xl text-energy-foreground shadow-energy active:scale-95 transition-transform disabled:opacity-60"
+        >
+          <Zap className="h-5 w-5 fill-current" />
+          {minerFull ? "Miner is full" : energy < ENERGY_PER_GIVE ? "Not enough Energy" : `Give ${ENERGY_PER_GIVE} Energy`}
+        </button>
+        <p className="mt-1.5 text-center text-xs text-muted-foreground">{ENERGY_PER_CYCLE} Energy = 0.001 Gold every 2 minutes</p>
       </section>
     </AppShell>
-  );
-}
-
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border bg-card p-3 text-center shadow-card">
-      <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-muted">{icon}</div>
-      <p className="font-display text-xl tabular-nums">{value.toLocaleString()}</p>
-      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-function Tip({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <li className="flex items-start gap-3">
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">{icon}</span>
-      <span className="text-muted-foreground">{text}</span>
-    </li>
   );
 }

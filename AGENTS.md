@@ -13,3 +13,4 @@
 - WalletConnect is initialized only with a configured public Reown project ID; never treat a saved address as a connected wallet.
 - Gameplay is the 2D-canvas archery game (ArcheryGame); the server-issued target count is used for each round, and the existing authenticated game-result API handles reward settlement.
 - Target timing/motion curves live in lib/rules.ts as pure functions so they stay unit-tested.
+- Homepage is the energy + gold-mining screen; mining/energy math lives in backend/mining.ts as pure functions shared with the frontend, and the server settles mining state (gold stored as integer milli-gold) so clients cannot fake progress.

@@ -52,6 +52,15 @@ try {
   const walletSql = await readFile(new URL("../migrations/0006_wallet_destinations.sql", import.meta.url), "utf8");
   await db.executeMultiple(walletSql);
   console.log("Turso schema migration 0006 applied.");
+
+  const miningMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=7 LIMIT 1");
+  if (!miningMigration.rows.length) {
+    const miningSql = await readFile(new URL("../migrations/0007_energy_gold_mining.sql", import.meta.url), "utf8");
+    await db.executeMultiple(miningSql);
+    console.log("Turso schema migration 0007 applied.");
+  } else {
+    console.log("Turso schema migration 0007 already applied.");
+  }
 } finally {
   db.close();
 }

@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
+import { AD_ENERGY_COOLDOWN_MS, DAILY_ENERGY_BONUS, ENERGY_PER_AD, ENERGY_PER_GIVE, MINE_CAPACITY, giveToMine, mineRemainingMs, settleMine, type MineState } from "../mining.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -84,7 +85,20 @@ function view(row:Row){
     canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
-    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t};
+    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t,
+    ...energyView(row)};
+}
+function mineState(row:Row):MineState{
+  return {energy:Number(row.mine_energy??0),updatedAt:row.mine_updated_at==null?0:Number(row.mine_updated_at),pending:Number(row.gold_pending??0)};
+}
+function energyView(row:Row){
+  const now=Date.now(),mine=settleMine(mineState(row),now);
+  return {energy:Number(row.energy??0),gold:Number(row.gold??0),energyBonusClaimedToday:row.energy_bonus_date===today(),
+    mine:{energy:mine.energy,capacity:MINE_CAPACITY,updatedAt:mine.updatedAt,pendingGold:mine.pending,remainingMs:mineRemainingMs(mine,now)},
+    serverNow:now};
+}
+async function saveMine(tx:any,tgId:number,mine:MineState){
+  await tx.execute({sql:"UPDATE players SET mine_energy=?,mine_updated_at=?,gold_pending=? WHERE tg_id=?",args:[mine.energy,mine.updatedAt,mine.pending,tgId]});
 }
 async function ensurePlayer(db:any,user:AuthUser,startParam=""){
   let referrer:number|null=null;const m=/^ref_(\d+)$/.exec(startParam);
@@ -421,9 +435,10 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           await settleGameResult(db,tx,tgId,game,Number(game.pending_score),Number(game.pending_kills));
           disposition="coins_settled";
         }else if(!game||Number(game.expires_at)<now){
-          const credited=await tx.execute({sql:"UPDATE players SET extra_plays=MIN(?,extra_plays+1) WHERE tg_id=?",args:[MAX_EXTRA_PLAYS,tgId]});
+          const readyAt=now+AD_ENERGY_COOLDOWN_MS;
+          const credited=await tx.execute({sql:"UPDATE players SET energy=energy+?,ad_ready_at=CASE WHEN ad_ready_at IS NOT NULL AND ad_ready_at>? THEN ad_ready_at ELSE ? END WHERE tg_id=?",args:[ENERGY_PER_AD,now,readyAt,tgId]});
           if(credited.rowsAffected!==1)throw new Error("Player not found");
-          disposition="extra_play_added";
+          disposition="energy_added";
         }
         return {ok:true as const,duplicate:false,disposition};
       });
@@ -565,20 +580,18 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram server-side reward verification is not configured. Please contact support."},503);
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        if(p.last_play_date!==today())throw new Error("Play your one daily free game first. Ads unlock after that.");
+        if(p.energy_bonus_date!==today())throw new Error("Claim your daily bonus first. Ads unlock after that.");
         const now=Date.now();
-        const extraPlays=Number(p.extra_plays);
         const adReadyAt=p.ad_ready_at==null?0:Number(p.ad_ready_at);
-        console.info("[AdsGram] ad start eligibility", { extraPlays, adReadyAt, maxExtraPlays:MAX_EXTRA_PLAYS, rewardSecretConfigured:Boolean(env.ADSGRAM_REWARD_SECRET) });
-        if(extraPlays>=MAX_EXTRA_PLAYS)throw new Error("You already have the maximum extra plays");
+        console.info("[AdsGram] ad start eligibility", { adReadyAt, rewardSecretConfigured:Boolean(env.ADSGRAM_REWARD_SECRET) });
         if(adReadyAt>now)throw new Error("Next ad unlocks soon — please wait");
         await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
         const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,now]});
         // Reserve a maximum of MAX_EXTRA_PLAYS across verified plays plus in-flight
         // ad sessions. A missing/delayed postback must not hard-lock the next ad after one view.
         const pendingCount=Number(pending.rows[0]?.total??0);
-        console.info("[AdsGram] ad start pending sessions", { extraPlays, pendingCount, maxExtraPlays:MAX_EXTRA_PLAYS });
-        if(extraPlays+pendingCount>=MAX_EXTRA_PLAYS)
+        console.info("[AdsGram] ad start pending sessions", { pendingCount, maxPending:MAX_EXTRA_PLAYS });
+        if(pendingCount>=MAX_EXTRA_PLAYS)
           throw new Error("You have reached the maximum number of pending or verified extra plays. Please wait for server confirmation.");
         const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
@@ -615,7 +628,11 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         let status=String(session.status);
         if(status==="created"){
           const marked=await tx.execute({sql:"UPDATE ad_sessions SET status='awaiting_postback' WHERE id=? AND tg_id=? AND status='created' AND expires_at>=?",args:[id,user.id,Date.now()]});
-          if(marked.rowsAffected===1)status="awaiting_postback";
+          if(marked.rowsAffected===1){
+            status="awaiting_postback";
+            const now=Date.now(),readyAt=now+AD_ENERGY_COOLDOWN_MS;
+            await tx.execute({sql:"UPDATE players SET ad_ready_at=CASE WHEN ad_ready_at IS NOT NULL AND ad_ready_at>? THEN ad_ready_at ELSE ? END WHERE tg_id=?",args:[now,readyAt,user.id]});
+          }
         }
         if(status!=="awaiting_postback"&&status!=="rewarded")throw new Error("Ad session is not eligible for reward");
         const player=await playerRow(db,user.id,tx);
@@ -635,6 +652,37 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!player)return json({error:"Player not found"},404);
       const status=String(session.status),expired=Number(session.expires_at)<Date.now()&&status!=="rewarded";
       return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
+    }
+    if(path==="/api/energy/daily"){
+      const result=await txRun(db,async(tx)=>{
+        const t=today();
+        const claimed=await tx.execute({sql:"UPDATE players SET energy=energy+?,energy_bonus_date=? WHERE tg_id=? AND (energy_bonus_date IS NULL OR energy_bonus_date<>?)",args:[DAILY_ENERGY_BONUS,t,user.id,t]});
+        if(claimed.rowsAffected!==1)throw new Error("Daily bonus already claimed today");
+        return {...view((await playerRow(db,user.id,tx))!),bonusEnergy:DAILY_ENERGY_BONUS};
+      });
+      return json(result);
+    }
+    if(path==="/api/mine/give"){
+      const result=await txRun(db,async(tx)=>{
+        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+        const now=Date.now();
+        const next=giveToMine(mineState(p),Number(p.energy??0),now);
+        const spent=await tx.execute({sql:"UPDATE players SET energy=energy-? WHERE tg_id=? AND energy>=?",args:[ENERGY_PER_GIVE,user.id,ENERGY_PER_GIVE]});
+        if(spent.rowsAffected!==1)throw new Error("Not enough energy. Watch an ad to get more energy.");
+        await saveMine(tx,user.id,next);
+        return view((await playerRow(db,user.id,tx))!);
+      });
+      return json(result);
+    }
+    if(path==="/api/mine/claim"){
+      const result=await txRun(db,async(tx)=>{
+        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+        const mine=settleMine(mineState(p),Date.now());
+        if(mine.pending<1)throw new Error("No gold mined yet. Give energy to your miner first.");
+        await tx.execute({sql:"UPDATE players SET gold=gold+?,gold_pending=0,mine_energy=?,mine_updated_at=? WHERE tg_id=?",args:[mine.pending,mine.energy,mine.updatedAt,user.id]});
+        return {...view((await playerRow(db,user.id,tx))!),claimedGold:mine.pending};
+      });
+      return json(result);
     }
     if(path==="/api/bonus/claim"){
       const result=await txRun(db,async(tx)=>{
@@ -698,7 +746,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   }catch(e){
     const message=e instanceof Error?e.message:String(e);
     console.error("[API error]", { path, name:e instanceof Error?e.name:"UnknownError", message, stack:e instanceof Error?e.stack:undefined });
-    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active|waiting for server confirmation/i.test(message);
+    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active|waiting for server confirmation|full|no gold|daily bonus first/i.test(message);
     return json({error:message},conflict?409:400);
   }finally{db.close();}
 }
