@@ -458,3 +458,24 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
   aspect-ratio: 2 / 3;
 }
 .reference-player-id { top: 7.45%; }
+
+
+/* Align the live numbers and fill to the cleaned value slots in the reference art. */
+.reference-energy-readout { z-index: 1; }
+.reference-energy-bar-fill {
+  z-index: 0;
+  top: 17.6%;
+  height: 2.5%;
+}
+.reference-stat-energy {
+  left: 17.2%;
+  width: 17%;
+}
+.reference-stat-time {
+  left: 47.4%;
+  width: 13%;
+}
+.reference-stat-gold {
+  left: 76.3%;
+  width: 11.5%;
+}
