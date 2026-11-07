@@ -450,32 +450,308 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
 @media (min-width:640px) { .mine-app-shell { box-shadow:0 0 70px rgba(0,0,0,.5); } }
 
 
-/* Keep the uploaded 2:3 reference artwork proportional on mobile and desktop. */
+/* Exact uploaded gold-mining screenshot art with live data and transparent controls. */
 .reference-home-shell {
-  width: min(100%, 448px);
+  position: relative;
+  width: 100%;
+  max-width: 448px;
+  height: 100dvh;
+  min-height: 560px;
+  margin-inline: auto;
+  overflow: hidden;
+  isolation: isolate;
+  background: #28170f;
+}
+.reference-home-shell::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background-image: var(--reference-art);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+}
+.reference-profile-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.reference-profile-avatar {
+  position: absolute;
+  left: 6.1%;
+  top: 2.15%;
+  width: 13.7%;
+  height: 8.75%;
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.reference-profile-fallback {
+  display: grid;
+  place-items: center;
+  color: #5a2b0b;
+  background: linear-gradient(145deg,#ffe68c,#dc8b25);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+.reference-player-name,.reference-player-id,.reference-player-gold {
+  position: absolute;
+  overflow: hidden;
+  color: #fff8e8;
+  font-family: var(--font-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 2px 2px rgba(36,13,3,.9), 0 0 4px rgba(30,10,0,.75);
+}
+.reference-player-name {
+  top: 4.05%;
+  left: 24%;
+  width: 33%;
+  font-size: clamp(1.05rem,5vw,1.55rem);
+  line-height: 1.05;
+}
+.reference-player-id {
+  top: 7.45%;
+  left: 24%;
+  width: 34%;
+  font-family: var(--font-sans);
+  font-size: clamp(.7rem,3.25vw,1rem);
+  font-weight: 900;
+}
+.reference-player-gold {
+  top: 6.1%;
+  left: 69.5%;
+  width: 18%;
+  text-align: center;
+  font-size: clamp(1.15rem,5.2vw,1.7rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.reference-profile-wallet-hit {
+  position: absolute;
+  top: 2.5%;
+  left: 88%;
+  width: 10%;
+  height: 9%;
+  pointer-events: auto;
+}
+.reference-home-main {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 0;
+  margin: 0;
+  pointer-events: none;
+}
+.reference-energy-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.reference-energy-readout {
+  position: absolute;
+  top: 17.35%;
+  left: 15.2%;
+  width: 42.2%;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: clamp(1rem,5.3vw,1.45rem);
+  line-height: 1.05;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 2px #001b56, 0 0 3px #00133f;
+  z-index: 1;
+}
+.reference-energy-bar-fill {
+  position: absolute;
+  top: 17.6%;
+  left: 15.8%;
+  height: 2.5%;
+  max-width: 40.8%;
+  z-index: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg,#0984ff,#4ae5ff);
+  box-shadow: 0 0 5px rgba(30,190,255,.85);
+  transition: width .25s ease;
+}
+.reference-energy-plus-hit,.reference-get-energy-hit,.reference-claim-hit {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.reference-energy-plus-hit {
+  top: 15.75%;
+  left: 59%;
+  width: 8.5%;
+  height: 7.2%;
+}
+.reference-get-energy-hit {
+  top: 14%;
+  left: 68.6%;
+  width: 29%;
+  height: 8.6%;
+}
+.reference-energy-plus-hit:disabled,.reference-get-energy-hit:disabled,.reference-claim-hit:disabled {
+  cursor: not-allowed;
+}
+.reference-energy-action-state {
+  position: absolute;
+  top: 17%;
+  left: 69%;
+  width: 28%;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: clamp(.8rem,4vw,1.1rem);
+  text-align: center;
+  text-shadow: 0 2px 2px #7c3b08, 0 0 3px #5e2c08;
+  pointer-events: none;
+}
+.reference-mining-layer {
+  position: absolute;
+  top: 28.5%;
+  left: 0;
+  width: 100%;
+  height: 37.5%;
+  z-index: 2;
+  pointer-events: none;
+}
+.reference-mining-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+}
+.reference-miner-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: .7;
+}
+.reference-impact-glow {
+  position: absolute;
+  top: 69%;
+  left: 69%;
+  width: 19%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle,rgba(255,247,160,.58),rgba(255,167,25,.22) 35%,transparent 72%);
+  mix-blend-mode: screen;
+}
+.reference-gold-spark {
+  position: absolute;
+  top: 69%;
+  left: 70%;
+  width: 2.2%;
+  aspect-ratio: 1;
+  border-radius: 35%;
+  background: #ffe568;
+  box-shadow: 0 0 8px #ffb400,0 0 15px rgba(255,180,0,.8);
+  opacity: 0;
+}
+.reference-miner-fx.is-mining .reference-impact-glow {
+  animation: reference-impact-pulse 1.2s ease-in-out infinite;
+}
+.reference-miner-fx.is-mining .reference-gold-spark {
+  animation: reference-spark-flight 1.2s ease-out infinite;
+}
+.reference-miner-fx.is-mining .s2 { animation-delay: .18s; }
+.reference-miner-fx.is-mining .s3 { animation-delay: .37s; }
+.reference-miner-fx.is-mining .s4 { animation-delay: .56s; }
+@keyframes reference-impact-pulse {
+  0%,100% { opacity:.25; transform:scale(.72); }
+  48% { opacity:.85; transform:scale(1.18); }
+}
+@keyframes reference-spark-flight {
+  0% { opacity:0; transform:translate(0,0) scale(.4); }
+  20% { opacity:1; }
+  100% { opacity:0; transform:translate(var(--spark-x,12px),var(--spark-y,-24px)) scale(.2) rotate(160deg); }
+}
+.reference-gold-spark.s2 { --spark-x:-14px; --spark-y:-32px; }
+.reference-gold-spark.s3 { --spark-x:19px; --spark-y:-20px; }
+.reference-gold-spark.s4 { --spark-x:-26px; --spark-y:-13px; }
+.reference-stats-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  color: #fff8e7;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-shadow: 0 2px 2px rgba(34,13,4,.95), 0 0 3px rgba(30,10,0,.85);
+}
+.reference-stat-energy,.reference-stat-time,.reference-stat-gold {
+  position: absolute;
+  top: 68.25%;
+  width: 25%;
+  font-size: clamp(.92rem,4.4vw,1.28rem);
+  line-height: 1.05;
+}
+.reference-stat-energy { left: 17.2%; width: 17%; }
+.reference-stat-time { left: 47.4%; width: 13%; }
+.reference-stat-gold { left: 76.3%; width: 11.5%; }
+.reference-claim-hit {
+  top: 74%;
+  left: 19.5%;
+  width: 61%;
+  height: 11.6%;
+  z-index: 5;
+  pointer-events: auto;
+}
+.reference-claim-hit:disabled { opacity: .92; }
+.reference-claim-state {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12%;
+  color: #eaffdf;
+  font-family: var(--font-display);
+  font-size: clamp(.46rem,2.3vw,.65rem);
+  letter-spacing: .1em;
+  text-shadow: 0 1px 2px #075413;
+  pointer-events: none;
+}
+.reference-home-nav {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  height: 13.1%;
+  pointer-events: none;
+}
+.reference-nav-hit {
+  display: block;
+  min-width: 0;
+  height: 100%;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 365px) {
+  .reference-player-name { font-size: clamp(.95rem,4.8vw,1.2rem); }
+  .reference-player-id { font-size: clamp(.62rem,2.9vw,.82rem); }
+  .reference-stat-energy,.reference-stat-time,.reference-stat-gold { font-size: clamp(.78rem,4vw,1rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reference-miner-fx *, .reference-miner-fx::before { animation: none !important; }
+}
+
+/* Keep the reference art's natural 2:3 ratio in the Telegram WebView. */
+.reference-home-shell {
+  width: min(100%,448px);
   height: auto;
   min-height: 0;
   aspect-ratio: 2 / 3;
 }
-.reference-player-id { top: 7.45%; }
-
-
-/* Align the live numbers and fill to the cleaned value slots in the reference art. */
-.reference-energy-readout { z-index: 1; }
-.reference-energy-bar-fill {
-  z-index: 0;
-  top: 17.6%;
-  height: 2.5%;
-}
-.reference-stat-energy {
-  left: 17.2%;
-  width: 17%;
-}
-.reference-stat-time {
-  left: 47.4%;
-  width: 13%;
-}
-.reference-stat-gold {
-  left: 76.3%;
-  width: 11.5%;
+@media (max-aspect-ratio: 9 / 16) {
+  .reference-home-shell { width: min(100vw,448px); }
 }
