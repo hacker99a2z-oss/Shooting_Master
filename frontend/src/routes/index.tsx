@@ -1,10 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Gift, Tv, Timer, Zap, Pickaxe, Hourglass, Plus } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { GoldMiner } from "@/components/GoldMiner";
-import { GoldNugget } from "@/components/GoldNugget";
 import { usePlayer } from "@/hooks/use-player";
 import { startAdPlay, grantAdPlay, getAdPlayStatus, cancelAdPlay, claimDailyEnergy, giveMinerEnergy, claimMinedGold, type AdPlayStatus } from "@/lib/api.functions";
 import { auth, haptic, showRewardAd } from "@/lib/tg";
@@ -223,26 +221,25 @@ function Home() {
 
   return (
     <AppShell showProfile>
-      <section className="energy-dock" aria-label="Energy balance">
-        <div className="energy-dock-icon">
-          <Zap className="h-7 w-7 fill-current" />
+      <section className="reference-energy-layer" aria-label="Energy balance">
+        <div className="reference-energy-readout" aria-live="polite">
+          {me ? `${energy.toLocaleString()} / ${MINE_CAPACITY.toLocaleString()}` : "…"}
         </div>
-        <div className="energy-meter">
-          <div className="energy-meter-heading">
-            <span>Energy</span>
-            <span className="energy-meter-bonus">{dailyClaimed ? `+${ENERGY_PER_AD} per ad` : `+${ENERGY_PER_GIVE} daily bonus`}</span>
-          </div>
-          <div className="energy-meter-value">
-            <strong>{me ? energy.toLocaleString() : "…"}</strong>
-            <span>AVAILABLE</span>
-          </div>
-          <div className="energy-track" aria-label={`${energy} available energy`}>
-            <span style={{ width: `${Math.min(100, Math.max(0, (energy / MINE_CAPACITY) * 100))}%` }} />
-          </div>
-        </div>
+        <div
+          className="reference-energy-bar-fill"
+          style={{ width: `${Math.min(100, Math.max(0, (energy / MINE_CAPACITY) * 100)) * 0.42}%` }}
+        />
         <button
           type="button"
-          className="get-energy-button"
+          className="reference-energy-plus-hit"
+          aria-label={`Give ${ENERGY_PER_GIVE} energy to miner`}
+          disabled={mineBusy || !me || energy < ENERGY_PER_GIVE || minerFull}
+          onClick={give}
+        />
+        <button
+          type="button"
+          className="reference-get-energy-hit"
+          aria-label="Get energy"
           disabled={isLoading || busy || (dailyClaimed && waitSec > 0 && !pendingAdSessionId)}
           onClick={() => {
             if (!dailyClaimed) void claimBonus();
@@ -250,88 +247,48 @@ function Home() {
             else void watchAd();
           }}
         >
-          {waitSec > 0 && dailyClaimed && !pendingAdSessionId ? <Timer className="h-5 w-5" /> : dailyClaimed ? <Tv className="h-5 w-5" /> : <Gift className="h-5 w-5" />}
-          <span>{busy ? "Please wait…" : waitSec > 0 && dailyClaimed && !pendingAdSessionId ? clock(waitSec * 1000) : pendingAdSessionId ? "Verify" : "Get Energy"}</span>
-        </button>
-        <p className="energy-dock-footnote">
-          {error ? (error as Error).message : !dailyClaimed ? "Your free daily energy bonus is ready to collect." : pendingAdSessionId ? "Your watched ad is waiting for secure confirmation." : "Watch a rewarded ad to collect more energy."}
-        </p>
-      </section>
-
-      <section id="mining-area" className="mining-home" aria-label="Your gold mining area">
-        <div className="mine-title-plaque">
-          <Pickaxe className="h-6 w-6" />
-          <h2>Your Mining Area</h2>
-          <Pickaxe className="h-6 w-6 scale-x-[-1]" />
-        </div>
-
-        <div className="mine-stage">
-          <GoldMiner mining={mining} />
-          <div className={`mine-status-pill ${mining ? "active" : ""}`}>
-            <span />
-            {mining ? "MINER WORKING" : "MINER RESTING"}
-          </div>
-          <div className="mine-stage-caption">
-            <strong>GOLD MINE</strong>
-            <span>{mining ? "Keep mining to collect gold!" : "Fuel your miner to start digging"}</span>
-          </div>
-        </div>
-
-        <div className="mine-stats-grid">
-          <div className="mine-stat-card miner-energy-stat">
-            <span className="mine-stat-label"><Zap className="h-3.5 w-3.5 fill-current" /> Miner Energy</span>
-            <div className="mine-stat-main">
-              <strong>{live.energy.toLocaleString()}<small>/{MINE_CAPACITY.toLocaleString()}</small></strong>
-              <button
-                type="button"
-                className="miner-refuel-button"
-                aria-label={`Give ${ENERGY_PER_GIVE} energy to miner`}
-                title={`Give ${ENERGY_PER_GIVE} energy`}
-                disabled={mineBusy || !me || energy < ENERGY_PER_GIVE || minerFull}
-                onClick={give}
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="miner-energy-track">
-              <span style={{ width: `${Math.min(100, (live.energy / MINE_CAPACITY) * 100)}%` }} />
-            </div>
-            <span className="mine-stat-hint">{minerFull ? "Miner is full" : energy < ENERGY_PER_GIVE ? "Get energy to refill" : `+ ${ENERGY_PER_GIVE} energy to mine`}</span>
-          </div>
-
-          <div className="mine-stat-card">
-            <span className="mine-stat-label"><Hourglass className="h-3.5 w-3.5" /> Next Gold</span>
-            <strong className="mine-stat-value">{mining ? clock(nextGoldMs) : "2:00"}</strong>
-            <span className="mine-stat-hint">{ENERGY_PER_CYCLE} energy / cycle</span>
-            <div className="mine-cycle-track">
-              <span style={{ width: `${(cycleElapsed / MINE_CYCLE_MS) * 100}%` }} />
-            </div>
-          </div>
-
-          <div className="mine-stat-card">
-            <span className="mine-stat-label"><Pickaxe className="h-3.5 w-3.5" /> Gold Reward</span>
-            <strong className="mine-stat-value">{formatGold(MILLI_GOLD_PER_CYCLE)}</strong>
-            <span className="mine-stat-hint">Gold per cycle</span>
-            <span className="mine-stat-runway">{mining ? `Run time ${clock(remainingMs)}` : "2 min per 10 energy"}</span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          disabled={mineBusy || live.pending < 1}
-          onClick={claimGold}
-          aria-label={`Claim ${formatGold(live.pending)} gold`}
-          className="claim-gold-button"
-        >
-          <span className="claim-gold-coins"><GoldNugget /><GoldNugget /><GoldNugget /></span>
-          <span className="claim-gold-copy">
-            <strong>{mineBusy ? "Collecting…" : "Claim Gold"}</strong>
-            <small>{formatGold(live.pending)} GOLD READY</small>
+          <span className="sr-only">
+            {busy ? "Please wait" : waitSec > 0 && dailyClaimed && !pendingAdSessionId
+              ? clock(waitSec * 1000)
+              : pendingAdSessionId ? "Verify ad reward" : "Get Energy"}
           </span>
-          <span className="claim-gold-arrow">›</span>
         </button>
-        <p className="mine-rules-note">{ENERGY_PER_CYCLE} Energy = {formatGold(MILLI_GOLD_PER_CYCLE)} Gold every 2 minutes. Your gold is verified and credited by the server.</p>
+        {(busy || pendingAdSessionId || (dailyClaimed && waitSec > 0)) && (
+          <div className="reference-energy-action-state">
+            {busy ? "Please wait…" : pendingAdSessionId ? "Verify" : clock(waitSec * 1000)}
+          </div>
+        )}
+        <div className="sr-only">
+          {error ? (error as Error).message : !dailyClaimed
+            ? "Your free daily energy bonus is ready to collect."
+            : pendingAdSessionId
+              ? "Your watched ad is waiting for secure confirmation."
+              : "Watch a rewarded ad to collect more energy."}
+        </div>
       </section>
+
+      <section className="reference-mining-layer" aria-label="Your Mining Area">
+        <div id="mining-area" className="reference-mining-anchor" />
+        <GoldMiner mining={mining} />
+      </section>
+
+      <section className="reference-stats-layer" aria-label="Mining statistics">
+        <div className="reference-stat-energy">{live.energy.toLocaleString()} / {MINE_CAPACITY.toLocaleString()}</div>
+        <div className="reference-stat-time">{mining ? clock(nextGoldMs) : "2 min"}</div>
+        <div className="reference-stat-gold">{formatGold(MILLI_GOLD_PER_CYCLE)}</div>
+      </section>
+
+      <button
+        type="button"
+        className="reference-claim-hit"
+        disabled={mineBusy || live.pending < 1}
+        onClick={claimGold}
+        aria-label={`Claim ${formatGold(live.pending)} gold`}
+      >
+        <span className="reference-claim-state">
+          {mineBusy ? "Collecting…" : live.pending > 0 ? `${formatGold(live.pending)} GOLD READY` : ""}
+        </span>
+      </button>
     </AppShell>
   );
 }

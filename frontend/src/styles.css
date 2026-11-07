@@ -448,3 +448,13 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
   .mine-stat-label { font-size:.48rem; }
 }
 @media (min-width:640px) { .mine-app-shell { box-shadow:0 0 70px rgba(0,0,0,.5); } }
+
+
+/* Keep the uploaded 2:3 reference artwork proportional on mobile and desktop. */
+.reference-home-shell {
+  width: min(100%, 448px);
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 2 / 3;
+}
+.reference-player-id { top: 7.45%; }
