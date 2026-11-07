@@ -4,7 +4,6 @@ import type { CSSProperties, ReactNode } from "react";
 import goldMiningReference from "@/assets/gold-mining-reference.webp";
 import { usePlayer } from "@/hooks/use-player";
 import { formatGold } from "@/lib/mining";
-import { GoldNugget } from "@/components/GoldNugget";
 
 const tabs = [
   { to: "/leaderboard", label: "Leaderboard", icon: Trophy },
