@@ -244,31 +244,83 @@
 @keyframes energy-zap { 0%,88%,100% { transform: scale(1) rotate(0) } 92% { transform: scale(1.15) rotate(-8deg) } 96% { transform: scale(.95) rotate(6deg) } }
 @utility animate-zap { animation: energy-zap 3s ease-in-out infinite; }
 
-/* Animated mining scene: three pose frames (raise -> overhead -> strike) swap in a loop.
-   Overlays are positioned in % of the illustration. */
-.mine-scene { background-color: var(--background); }
-.mine-art { position: absolute; top: 0; bottom: 0; left: 50%; aspect-ratio: 1072 / 624; transform: translateX(-48%); }
-.mine-art img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; transition: filter .6s ease; }
+/* Warm, image-led mining bay and responsive progress panels. */
+.mine-card {
+  background: linear-gradient(155deg, rgba(77, 47, 25, .96), rgba(35, 23, 15, .98) 72%);
+  border-color: rgba(231, 170, 83, .42);
+  box-shadow: 0 18px 42px -24px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 228, 180, .12), 0 0 24px -16px rgba(255, 176, 59, .62);
+}
+.mine-eyebrow { display: flex; align-items: center; gap: .35rem; color: #e9b962; font-size: .63rem; font-weight: 700; letter-spacing: .18em; }
+.mine-eyebrow svg { width: .8rem; height: .8rem; }
+.mine-status { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgba(255, 220, 163, .18); border-radius: 999px; padding: .42rem .7rem; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.mine-status.is-ready { color: #f0d9b4; background: rgba(255, 244, 220, .08); }
+.mine-status.is-mining { color: #b8f4d0; border-color: rgba(115, 222, 151, .3); background: rgba(59, 151, 86, .2); }
+.mine-status-dot { width: .42rem; height: .42rem; border-radius: 999px; background: #d6ac70; }
+.mine-status.is-mining .mine-status-dot { background: #73de97; box-shadow: 0 0 12px rgba(115, 222, 151, .8); animation: status-pulse 1.4s ease-in-out infinite; }
+.mine-viewport { isolation: isolate; border-color: rgba(250, 195, 99, .38); background: #26180f; box-shadow: inset 0 0 28px rgba(0, 0, 0, .45), 0 8px 22px rgba(0, 0, 0, .28); }
+.mine-viewport::after { position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(20, 12, 7, .2), transparent 30%, transparent 55%, rgba(21, 13, 8, .72)); content: ""; pointer-events: none; }
+.mine-viewport-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: .8rem; pointer-events: none; }
+.mine-location { border: 1px solid rgba(255, 239, 208, .28); border-radius: 999px; padding: .32rem .55rem; color: #fff3d6; background: rgba(34, 22, 14, .66); font-size: .57rem; font-weight: 700; letter-spacing: .15em; backdrop-filter: blur(8px); }
+.mine-location span { color: #f7c75d; }
+.mine-scene-message { color: #fff1cc; font-family: var(--font-display); font-size: clamp(1.05rem, 5vw, 1.4rem); line-height: 1; text-shadow: 0 2px 12px rgba(0, 0, 0, .85); }
+.mine-stats { color: var(--foreground); }
+.mine-stat { min-width: 0; border: 1px solid rgba(233, 183, 110, .16); border-radius: 1rem; padding: .7rem .75rem .65rem; background: rgba(18, 12, 8, .43); }
+.mine-stat-label { display: flex; align-items: center; gap: .35rem; color: #d7bd99; font-size: .6rem; font-weight: 700; letter-spacing: .12em; }
+.mine-stat-label svg { width: .8rem; height: .8rem; color: var(--gold); }
+.mine-stat-value { margin-top: .28rem; font-family: var(--font-display); font-size: 1.25rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.mine-stat-value span { color: #c6ad8a; font-family: var(--font-sans); font-size: .72rem; font-weight: 500; }
+.mine-progress { height: .35rem; margin-top: .55rem; overflow: hidden; border-radius: 999px; background: rgba(255, 247, 226, .1); }
+.mine-progress > span { display: block; height: 100%; border-radius: inherit; transition: width .35s ease; }
+.mine-energy-fill { background: linear-gradient(90deg, #36b89f, #90f1cd); box-shadow: 0 0 10px rgba(96, 228, 190, .5); }
+.mine-gold-fill { background: linear-gradient(90deg, #d78231, #ffe184); box-shadow: 0 0 10px rgba(255, 200, 85, .5); }
+.gold-claim { border-color: rgba(236, 188, 103, .2); background: rgba(22, 14, 9, .52); }
+.gold-claim-icon { display: grid; width: 2.45rem; height: 2.45rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(255, 211, 117, .28); border-radius: .8rem; background: rgba(224, 157, 47, .16); }
+.gold-claim-amount { color: #ffe394; font-family: var(--font-display); font-size: 1.12rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gold-claim-amount span { display: block; color: #c5a877; font-family: var(--font-sans); font-size: .52rem; font-weight: 700; letter-spacing: .13em; text-align: right; }
+.energy-action { color: #08251e; background: linear-gradient(115deg, #8cf0d2, #51cbb4 72%, #39b39f); box-shadow: 0 9px 24px -12px rgba(86, 225, 190, .8), inset 0 1px 0 rgba(255, 255, 255, .48); }
+.energy-action-icon { display: grid; width: 2.45rem; height: 2.45rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(8, 37, 30, .16); border-radius: .8rem; background: rgba(255, 255, 255, .24); }
+.energy-action-arrow { font-size: 1.8rem; line-height: 1; opacity: .68; }
+.mine-footnote { margin-top: .55rem; color: #cfb99a; font-size: .67rem; text-align: center; }
+.mine-footnote strong { color: #f3d17a; font-weight: 700; }
+
+/* Mining animation: load, raise, strike the vein, then scatter sparks on impact. */
+.mine-scene { background-color: #21150d; }
+.mine-art { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; aspect-ratio: 1072 / 624; }
+.mine-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; transition: filter .6s ease; }
 .mine-art .f-mid, .mine-art .f-strike { opacity: 0; }
-.mine-scene:not(.is-mining) .mine-art .f-strike { opacity: 1; }
-.mine-scene:not(.is-mining) .mine-art img { filter: saturate(.55) brightness(.7); }
-.mine-scene.is-mining .mine-art { animation: mine-shake 1.2s linear infinite; }
-.mine-scene.is-mining .f-mid { animation: frame-mid 1.2s linear infinite; }
-.mine-scene.is-mining .f-strike { animation: frame-strike 1.2s linear infinite; }
-.mine-glow { position: absolute; border-radius: 999px; pointer-events: none; transform: translate(-50%,-50%);
-  background: radial-gradient(circle, color-mix(in oklab, var(--gold) 75%, transparent) 0%, transparent 70%); mix-blend-mode: screen; }
+.mine-scene:not(.is-mining) .mine-art img { filter: saturate(.86) brightness(.84); }
+.mine-scene.is-mining .mine-art { animation: mine-impact-shake 1.65s ease-in-out infinite; }
+.mine-scene.is-mining .f-raise { animation: frame-raise 1.65s linear infinite; }
+.mine-scene.is-mining .f-mid { animation: frame-mid 1.65s linear infinite; }
+.mine-scene.is-mining .f-strike { animation: frame-strike 1.65s linear infinite; }
+.mine-glow { position: absolute; z-index: 1; border-radius: 999px; pointer-events: none; transform: translate(-50%,-50%); background: radial-gradient(circle, color-mix(in oklab, var(--gold) 75%, transparent) 0%, transparent 70%); mix-blend-mode: screen; }
 .mine-lantern { width: 22%; aspect-ratio: 1; animation: lantern-flicker 2.6s ease-in-out infinite; }
 .mine-lantern.b { animation-delay: 1.3s; }
-.mine-flash { width: 28%; aspect-ratio: 1; opacity: 0; }
-.mine-scene.is-mining .mine-flash { animation: strike-flash 1.2s ease-out infinite; }
-.mine-chip { position: absolute; width: 2.4%; aspect-ratio: 1; border-radius: 2px; background: var(--gradient-gold); opacity: 0; pointer-events: none; }
-.mine-scene.is-mining .mine-chip { animation: chip-fly 1.2s ease-out infinite; }
-@keyframes frame-mid { 0%,37.9% { opacity: 0 } 38%,49.9% { opacity: 1 } 50%,84.9% { opacity: 0 } 85%,91.9% { opacity: 1 } 92%,100% { opacity: 0 } }
-@keyframes frame-strike { 0%,49.9% { opacity: 0 } 50%,84.9% { opacity: 1 } 85%,100% { opacity: 0 } }
-@keyframes mine-shake { 0%,49.9%,58%,100% { transform: translateX(-48%) } 51% { transform: translateX(-48.8%) translateY(2px) } 54% { transform: translateX(-47.4%) translateY(-1px) } }
+.mine-flash { width: 26%; aspect-ratio: 1; opacity: 0; background: radial-gradient(circle, rgba(255, 255, 224, .96) 0 3%, rgba(255, 231, 134, .85) 8%, rgba(255, 177, 44, .42) 24%, transparent 72%); }
+.mine-scene.is-mining .mine-flash { animation: strike-flash 1.65s ease-out infinite; }
+.mine-chip { position: absolute; z-index: 2; width: 2.4%; aspect-ratio: 1; border-radius: 2px; background: var(--gradient-gold); box-shadow: 0 0 10px rgba(255, 219, 117, .9); opacity: 0; pointer-events: none; }
+.mine-scene.is-mining .mine-chip { animation: chip-fly 1.65s ease-out infinite; animation-delay: calc(var(--chip-index) * 24ms); }
+@keyframes frame-raise { 0%,29% { opacity: 1 } 33%,92% { opacity: 0 } 96%,100% { opacity: 1 } }
+@keyframes frame-mid { 0%,26% { opacity: 0 } 31%,48% { opacity: 1 } 53%,80% { opacity: 0 } 84%,92% { opacity: 1 } 97%,100% { opacity: 0 } }
+@keyframes frame-strike { 0%,47% { opacity: 0 } 51%,81% { opacity: 1 } 86%,100% { opacity: 0 } }
+@keyframes mine-impact-shake { 0%,48%,61%,100% { transform: translate3d(0, 0, 0) } 51% { transform: translate3d(-1.2%, 1%, 0) } 55% { transform: translate3d(.7%, -.5%, 0) } 58% { transform: translate3d(-.3%, .2%, 0) } }
 @keyframes lantern-flicker { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(1) } 40% { opacity: .85; transform: translate(-50%,-50%) scale(1.08) } 70% { opacity: .65 } }
-@keyframes strike-flash { 0%,49.9% { opacity: 0; transform: translate(-50%,-50%) scale(.3) } 53% { opacity: 1; transform: translate(-50%,-50%) scale(1) } 75%,100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5) } }
-@keyframes chip-fly { 0%,49.9% { opacity: 0; transform: translate(0,0) rotate(0) } 53% { opacity: 1 } 90% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(220deg) } 100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 14px)) rotate(260deg) } }
+@keyframes strike-flash { 0%,49% { opacity: 0; transform: translate(-50%,-50%) scale(.25) } 54% { opacity: 1; transform: translate(-50%,-50%) scale(1) } 73%,100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5) } }
+@keyframes chip-fly { 0%,49% { opacity: 0; transform: translate(0,0) rotate(0) } 53% { opacity: 1 } 88% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(220deg) } 100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 14px)) rotate(260deg) } }
+@keyframes status-pulse { 50% { opacity: .45; transform: scale(.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .mine-scene.is-mining .mine-art, .mine-scene.is-mining .f-raise, .mine-scene.is-mining .f-mid,
+  .mine-scene.is-mining .mine-flash, .mine-scene.is-mining .mine-chip { animation: none; }
+  .mine-scene.is-mining .f-raise, .mine-scene.is-mining .f-mid { opacity: 0; }
+  .mine-scene.is-mining .f-strike { opacity: 1; }
+}
+@media (max-width: 360px) {
+  .mine-card { padding: .7rem; }
+  .mine-stat { padding-inline: .55rem; }
+  .mine-stat-value { font-size: 1.1rem; }
+  .mine-location { font-size: .51rem; }
+}
+
 
 /* Small gold nugget icon */
 .nugget-icon .nugget { fill: var(--gold); }

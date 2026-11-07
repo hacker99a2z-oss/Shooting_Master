@@ -34,7 +34,7 @@ function clock(ms: number) {
 }
 
 function Home() {
-  const { data: me, isLoading, error, setPlayer, dataUpdatedAt } = usePlayer();
+  const { data: me, isLoading, error, refetch, setPlayer, dataUpdatedAt } = usePlayer();
   const [busy, setBusy] = useState(false);
   const [mineBusy, setMineBusy] = useState(false);
   const [pendingAdSessionId, setPendingAdSessionId] = useState(() => {
@@ -243,7 +243,16 @@ function Home() {
           {isLoading ? (
             <div className="h-16 animate-pulse rounded-2xl bg-muted" />
           ) : error ? (
-            <p className="text-sm text-destructive">{(error as Error).message}</p>
+            <div className="flex items-center justify-between gap-3 text-sm text-destructive">
+              <p>Could not load energy right now.</p>
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                className="shrink-0 whitespace-nowrap rounded-full border border-current px-3 py-1.5 font-semibold"
+              >
+                Try again
+              </button>
+            </div>
           ) : !dailyClaimed ? (
             <button
               disabled={busy}
@@ -269,59 +278,131 @@ function Home() {
         </p>
       </section>
 
-      <section className="mt-4 rounded-3xl border bg-card p-5 shadow-card">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-2xl">Your Mining Area</h2>
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${mining ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
-            <span className={`h-2 w-2 rounded-full ${mining ? "animate-pulse bg-success" : "bg-muted-foreground"}`} />
-            {mining ? "Mining" : "Resting"}
+      <section className="mine-card mt-4 overflow-hidden rounded-[1.8rem] border p-3.5 shadow-card">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <div>
+            <p className="mine-eyebrow">
+              <Pickaxe aria-hidden="true" /> THE GOLD VEIN
+            </p>
+            <h2 className="mt-1 text-2xl leading-none">Mining Area</h2>
+          </div>
+          <span
+            className={`mine-status ${mining ? "is-mining" : "is-ready"}`}
+            aria-live="polite"
+          >
+            <span className="mine-status-dot" />
+            {mining ? "Mining now" : "Ready"}
           </span>
         </div>
 
-        <div className="mt-3 grid grid-cols-[1fr_7.5rem] gap-2.5">
-          <div className="relative min-h-[13.5rem] overflow-hidden rounded-2xl border shadow-card">
-            <GoldMiner mining={mining} />
+        <div className="mine-viewport relative mt-3 aspect-[1.7] overflow-hidden rounded-2xl border">
+          <GoldMiner mining={mining} />
+          <div className="mine-viewport-overlay" aria-hidden="true">
+            <span className="mine-location">
+              CAVE 01 <span>·</span> GOLD VEIN
+            </span>
+            <span className="mine-scene-message">
+              {mining ? "Pickaxe at work" : "Your next strike awaits"}
+            </span>
           </div>
+        </div>
 
-          <div className="flex flex-col justify-between gap-2 rounded-2xl border bg-secondary p-2.5 text-center">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Miner Energy</p>
-              <p className="mt-0.5 flex items-center justify-center gap-1 font-display text-lg leading-none tabular-nums">
-                <Zap className="h-4 w-4 fill-current text-energy" />{live.energy}/{MINE_CAPACITY}
-              </p>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-energy transition-all" style={{ width: `${(live.energy / MINE_CAPACITY) * 100}%` }} />
-              </div>
-            </div>
-            <div>
-              <p className="flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><Hourglass className="h-3 w-3" />Time left</p>
-              <p className="font-display text-lg leading-tight tabular-nums">{clock(remainingMs)}</p>
-              <p className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground"><Pickaxe className="h-3 w-3" />{mining ? `+0.001 in ${clock(nextGoldMs)}` : "Not mining"}</p>
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-gold" style={{ width: `${(cycleElapsed / MINE_CYCLE_MS) * 100}%` }} />
-              </div>
-            </div>
-            <button
-              disabled={mineBusy || live.pending < 1}
-              onClick={claimGold}
-              aria-label={`Claim ${formatGold(live.pending)} gold`}
-              className="flex w-full items-center justify-center gap-1 rounded-xl bg-gold py-2.5 font-display text-lg tabular-nums text-primary-foreground shadow-glow active:scale-95 transition-transform disabled:opacity-60"
+        <div className="mine-stats mt-3 grid grid-cols-2 gap-2.5">
+          <div className="mine-stat">
+            <p className="mine-stat-label">
+              <Zap aria-hidden="true" /> MINER FUEL
+            </p>
+            <p className="mine-stat-value">
+              {live.energy.toLocaleString()}
+              <span> / {MINE_CAPACITY.toLocaleString()}</span>
+            </p>
+            <div
+              className="mine-progress"
+              role="progressbar"
+              aria-label="Miner energy"
+              aria-valuemin={0}
+              aria-valuemax={MINE_CAPACITY}
+              aria-valuenow={live.energy}
             >
-              <GoldNugget className="on-gold h-4 w-4" />
-              {formatGold(live.pending)}
-            </button>
+              <span
+                className="mine-energy-fill"
+                style={{ width: `${(live.energy / MINE_CAPACITY) * 100}%` }}
+              />
+            </div>
+          </div>
+          <div className="mine-stat">
+            <p className="mine-stat-label">
+              <Hourglass aria-hidden="true" /> {mining ? "NEXT GOLD" : "MINE TIME"}
+            </p>
+            <p className="mine-stat-value">
+              {clock(mining ? nextGoldMs : remainingMs)}
+            </p>
+            <div
+              className="mine-progress"
+              role="progressbar"
+              aria-label="Mining cycle progress"
+              aria-valuemin={0}
+              aria-valuemax={MINE_CYCLE_MS}
+              aria-valuenow={cycleElapsed}
+            >
+              <span
+                className="mine-gold-fill"
+                style={{ width: `${(cycleElapsed / MINE_CYCLE_MS) * 100}%` }}
+              />
+            </div>
           </div>
         </div>
 
         <button
+          disabled={mineBusy || live.pending < 1}
+          onClick={claimGold}
+          aria-label={`Claim ${formatGold(live.pending)} gold`}
+          className="gold-claim mt-2.5 flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          <span className="gold-claim-icon">
+            <GoldNugget className="on-gold h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold leading-tight">
+              Collect your gold
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Gold mined so far
+            </span>
+          </span>
+          <span className="gold-claim-amount">
+            {formatGold(live.pending)}
+            <span> GOLD</span>
+          </span>
+        </button>
+
+        <button
           disabled={mineBusy || !me || energy < ENERGY_PER_GIVE || minerFull}
           onClick={give}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-energy py-3.5 font-display text-xl text-energy-foreground shadow-energy active:scale-95 transition-transform disabled:opacity-60"
+          className="energy-action mt-2.5 flex w-full items-center gap-3 rounded-2xl px-3.5 py-3.5 text-left transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55"
         >
-          <Zap className="h-5 w-5 fill-current" />
-          {minerFull ? "Miner is full" : energy < ENERGY_PER_GIVE ? "Not enough Energy" : `Give ${ENERGY_PER_GIVE} Energy`}
+          <span className="energy-action-icon">
+            <Zap aria-hidden="true" className="h-5 w-5 fill-current" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-display text-xl leading-tight">
+              {minerFull
+                ? "Miner is full"
+                : energy < ENERGY_PER_GIVE
+                  ? "Not enough Energy"
+                  : `Give ${ENERGY_PER_GIVE} Energy`}
+            </span>
+            <span className="mt-0.5 block text-xs opacity-75">
+              {ENERGY_PER_CYCLE} energy powers one gold cycle
+            </span>
+          </span>
+          <span className="energy-action-arrow" aria-hidden="true">
+            ›
+          </span>
         </button>
-        <p className="mt-1.5 text-center text-xs text-muted-foreground">{ENERGY_PER_CYCLE} Energy = 0.001 Gold every 2 minutes</p>
+        <p className="mine-footnote">
+          Your miner finds <strong>0.001 Gold</strong> every 2 minutes
+        </p>
       </section>
     </AppShell>
   );
