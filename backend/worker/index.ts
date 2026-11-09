@@ -29,6 +29,7 @@ interface Env {
   PAYOUT_ENABLED?: string;
   PAYOUT_PRIVATE_KEY?: string;
   BSC_RPC_URL?: string;
+  PAYOUT_CHANNEL_ID?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
@@ -209,15 +210,87 @@ async function setPayoutForReview(db:any,id:string,reason:string){
   });
   await writePayoutEvent(db,id,"failed_review",{reason:safeReason,at});
 }
-async function markPayoutPaid(db:any,id:string,txHash:string){
+// Public payout announcements: the channel comes from PAYOUT_CHANNEL_ID (@name or -100…)
+// or, when unset, from the public OFFICIAL_CHANNEL_URL (https://t.me/name).
+function payoutChannelChat(env:Env):string|null{
+  const configured=(env.PAYOUT_CHANNEL_ID||"").trim();
+  if(/^@[A-Za-z0-9_]{5,32}$/.test(configured)||/^-100\d{5,}$/.test(configured))return configured;
+  const match=/^https:\/\/t\.me\/([A-Za-z0-9_]{5,32})\/?$/.exec((env.OFFICIAL_CHANNEL_URL||"").trim());
+  return match?"@"+match[1]:null;
+}
+function escapeHtml(value:string){return value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function channelPostUrl(chat:any,messageId:number):string|null{
+  if(!Number.isSafeInteger(messageId))return null;
+  if(typeof chat?.username==="string"&&chat.username)return "https://t.me/"+chat.username+"/"+messageId;
+  const id=String(chat?.id??"");
+  return id.startsWith("-100")?"https://t.me/c/"+id.slice(4)+"/"+messageId:null;
+}
+async function announcePaidWithdrawal(db:any,env:Env,id:string){
+  const chat=payoutChannelChat(env);
+  if(!chat||!env.TELEGRAM_BOT_TOKEN)return;
+  const now=Date.now();
+  // Claim the announcement so concurrent runs never post the same payout twice.
+  const claim=await db.execute({
+    sql:"UPDATE withdrawals SET channel_posted_at=? WHERE id=? AND status='paid' AND channel_post_url IS NULL AND (channel_posted_at IS NULL OR channel_posted_at<?)",
+    args:[new Date(now).toISOString(),id,new Date(now-10*60_000).toISOString()]
+  });
+  if(claim.rowsAffected!==1)return;
+  try{
+    const selected=await db.execute({
+      sql:"SELECT w.usd,w.coins,w.wallet,w.payout_tx_hash,p.first_name,p.username FROM withdrawals w LEFT JOIN players p ON p.tg_id=w.tg_id WHERE w.id=? LIMIT 1",
+      args:[id]
+    });
+    const row=selected.rows[0] as Row|undefined;
+    if(!row)throw new Error("Withdrawal not found for announcement");
+    const wallet=String(row.wallet||"");
+    const txHash=typeof row.payout_tx_hash==="string"?row.payout_tx_hash:"";
+    const lines=[
+      "✅ <b>WITHDRAWAL PAID</b>",
+      "",
+      "👤 <b>Name:</b> "+escapeHtml(String(row.first_name||"Player")),
+      "🔗 <b>Username:</b> "+(row.username?"@"+escapeHtml(String(row.username)):"—"),
+      "💰 <b>Amount:</b> $"+Number(row.usd).toFixed(2)+" USDT ("+Number(row.coins).toLocaleString("en-US")+" coins)",
+      "👛 <b>Wallet:</b> <code>"+escapeHtml(wallet.slice(0,6)+"…"+wallet.slice(-4))+"</code>",
+      "🌐 <b>Network:</b> BNB Smart Chain (BEP-20)",
+    ];
+    if(/^0x[0-9a-fA-F]{64}$/.test(txHash))lines.push("🧾 <a href=\"https://bscscan.com/tx/"+txHash+"\">View transaction</a>");
+    const response=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/sendMessage",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({chat_id:chat,text:lines.join("\n"),parse_mode:"HTML",disable_web_page_preview:true}),
+    });
+    const payload=await response.json().catch(()=>({})) as {ok?:boolean;description?:string;result?:{message_id:number;chat:any}};
+    if(!response.ok||!payload.ok||!payload.result)throw new Error(payload.description||"Telegram channel post failed ("+response.status+")");
+    const url=channelPostUrl(payload.result.chat,payload.result.message_id);
+    await db.execute({sql:"UPDATE withdrawals SET channel_post_url=? WHERE id=?",args:[url||"https://t.me/"+chat.replace(/^@/,""),id]});
+  }catch(error){
+    console.error("[payout] channel announcement failed",id,error);
+    await db.execute({sql:"UPDATE withdrawals SET channel_posted_at=NULL WHERE id=? AND channel_post_url IS NULL",args:[id]}).catch(()=>{});
+  }
+}
+async function announceMissedPayouts(env:Env){
+  if(!payoutChannelChat(env))return;
+  const db=dbFor(env);
+  try{
+    // Bounded catch-up for recent payouts whose announcement failed; older history is never posted.
+    const rows=await db.execute({
+      sql:"SELECT id FROM withdrawals WHERE status='paid' AND channel_post_url IS NULL AND payout_paid_at>? ORDER BY payout_paid_at ASC LIMIT 10",
+      args:[new Date(Date.now()-24*60*60_000).toISOString()]
+    });
+    for(const row of rows.rows as Row[])await announcePaidWithdrawal(db,env,String(row.id));
+  }finally{db.close();}
+}
+async function markPayoutPaid(db:any,env:Env,id:string,txHash:string){
   const at=new Date().toISOString();
   const updated=await db.execute({
     sql:"UPDATE withdrawals SET status='paid',payout_tx_hash=?,payout_error=NULL,payout_updated_at=?,payout_paid_at=? WHERE id=? AND status='processing'",
     args:[txHash,at,at,id]
   });
-  if(updated.rowsAffected===1)await writePayoutEvent(db,id,"paid",{txHash,at,network:"BEP20",asset:"USDT"});
+  if(updated.rowsAffected===1){
+    await writePayoutEvent(db,id,"paid",{txHash,at,network:"BEP20",asset:"USDT"});
+    await announcePaidWithdrawal(db,env,id).catch((error)=>console.error("[payout] channel announcement skipped",id,error));
+  }
 }
-async function confirmPayoutReceipt(db:any,id:string,txHash:string,receipt:any,from:string,to:string,amount:bigint){
+async function confirmPayoutReceipt(db:any,env:Env,id:string,txHash:string,receipt:any,from:string,to:string,amount:bigint){
   if(receipt.status!=="success"){
     await setPayoutForReview(db,id,"The BNB Smart Chain transaction reverted. Treasury review is required.");
     return;
@@ -232,7 +305,7 @@ async function confirmPayoutReceipt(db:any,id:string,txHash:string,receipt:any,f
     await setPayoutForReview(db,id,"Transaction receipt did not contain the exact USDT transfer event. Treasury review is required.");
     return;
   }
-  await markPayoutPaid(db,id,txHash);
+  await markPayoutPaid(db,env,id,txHash);
 }
 function isReceiptNotFound(error:unknown){
   const message=error instanceof Error?error.message:String(error);
@@ -270,7 +343,7 @@ async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
   if(txHash){
     try{
       const receipt=await publicClient.getTransactionReceipt({hash:txHash as Hex});
-      await confirmPayoutReceipt(db,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
+      await confirmPayoutReceipt(db,env,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
       return;
     }catch(error){
       if(!isReceiptNotFound(error))throw error;
@@ -326,7 +399,7 @@ async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
   await writePayoutEvent(db,p.withdrawalId,"broadcast",{txHash,network:"BEP20",asset:"USDT"});
   try{
     const receipt=await publicClient.waitForTransactionReceipt({hash:txHash as Hex,confirmations:1,timeout:45_000});
-    await confirmPayoutReceipt(db,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
+    await confirmPayoutReceipt(db,env,p.withdrawalId,txHash,receipt,account.address,recipient,amount);
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
     if(!/timed out|timeout/i.test(message))throw error;
@@ -701,7 +774,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json({list:rows.rows.map((r:any,i:number)=>({rank:i+1,tgId:Number(r.tg_id),name:String(r.first_name),username:r.username==null?null:String(r.username),coins:Number(r.season_coins),prize:prize(i+1),isMe:Number(r.tg_id)===user.id})),seasonEndsAt:(sid+1)*SEASON_MS});
     }
     if(path==="/api/withdrawals"){
-      const rows=await db.execute({sql:"SELECT id,coins,usd,wallet,status,created_at,payout_tx_hash,payout_asset,payout_network,payout_error FROM withdrawals WHERE tg_id=? ORDER BY created_at DESC LIMIT 50",args:[user.id]});
+      const rows=await db.execute({sql:"SELECT id,coins,usd,wallet,status,created_at,payout_tx_hash,payout_asset,payout_network,payout_error,channel_post_url FROM withdrawals WHERE tg_id=? ORDER BY created_at DESC LIMIT 5",args:[user.id]});
       return json(rows.rows.map((r:any)=>({...r,coins:Number(r.coins),usd:Number(r.usd)})));
     }
     if(path==="/api/withdrawals/request"){
@@ -798,7 +871,7 @@ export default {
     catch(e){console.error("Worker unavailable",e);return json({error:"Service temporarily unavailable"},503);}
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext){
-    ctx.waitUntil(Promise.all([cleanup(env),recoverPendingPayouts(env)]));
+    ctx.waitUntil(Promise.all([cleanup(env),recoverPendingPayouts(env),announceMissedPayouts(env)]));
   },
   async queue(batch:MessageBatch<PayoutMessage>,env:Env){
     const db=dbFor(env);try{

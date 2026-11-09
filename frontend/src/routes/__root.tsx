@@ -26,7 +26,7 @@ function RootComponent() {
     if (!wa) return;
     wa.ready();
     wa.expand();
-    try { wa.setHeaderColor?.("#0f1d26"); wa.setBackgroundColor?.("#0f1d26"); wa.disableVerticalSwipes?.(); } catch {}
+    try { wa.setHeaderColor?.("#0c1730"); wa.setBackgroundColor?.("#0c1730"); wa.disableVerticalSwipes?.(); } catch {}
   }, []);
   return <QueryClientProvider client={queryClient}><Outlet /><Toaster position="top-center" /></QueryClientProvider>;
 }

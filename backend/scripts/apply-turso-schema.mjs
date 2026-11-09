@@ -61,6 +61,15 @@ try {
   } else {
     console.log("Turso schema migration 0007 already applied.");
   }
+
+  const channelPostMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=8 LIMIT 1");
+  if (!channelPostMigration.rows.length) {
+    const channelPostSql = await readFile(new URL("../migrations/0008_withdrawal_channel_posts.sql", import.meta.url), "utf8");
+    await db.executeMultiple(channelPostSql);
+    console.log("Turso schema migration 0008 applied.");
+  } else {
+    console.log("Turso schema migration 0008 already applied.");
+  }
 } finally {
   db.close();
 }

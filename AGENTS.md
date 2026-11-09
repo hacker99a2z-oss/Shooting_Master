@@ -14,3 +14,5 @@
 - Gameplay is the 2D-canvas archery game (ArcheryGame); the server-issued target count is used for each round, and the existing authenticated game-result API handles reward settlement.
 - Target timing/motion curves live in lib/rules.ts as pure functions so they stay unit-tested.
 - Homepage is the energy + gold-mining screen; mining/energy math lives in backend/mining.ts as pure functions shared with the frontend, and the server settles mining state (gold stored as integer milli-gold) so clients cannot fake progress.
+- Wallet page keeps balance, Trust Wallet connect and withdraw in one card; phones connect through the Trust Wallet app, PCs through the Trust Wallet extension, and the wallet address is never displayed.
+- Each paid automatic payout is announced once to the payout channel (PAYOUT_CHANNEL_ID, else the public OFFICIAL_CHANNEL_URL) and the history "View" button opens that post.

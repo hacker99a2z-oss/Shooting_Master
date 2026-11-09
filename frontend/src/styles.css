@@ -44,52 +44,59 @@
 }
 
 /*
- * Legacy color values are the default so older Android/Telegram WebViews
- * still get a visible background and readable UI when they cannot parse oklch().
+ * "Tactical Neon" palette taken from the Shooting Master game art: steel-navy base,
+ * electric-cyan armour glow (primary), hazard-stripe yellow (gold), fire-orange attack
+ * button (accent), enemy red (destructive) and crate green (success).
+ * Legacy hex values come first so older Android/Telegram WebViews still render the theme.
  */
 :root {
   color-scheme: dark;
   --radius: 1.1rem;
-  --background: #1b120b;
-  --foreground: #fff6e3;
-  --card: rgba(58, 37, 20, 0.8);
-  --card-foreground: #fff6e3;
-  --popover: #2c1d10;
-  --popover-foreground: #fff6e3;
-  --primary: #f4c84a;
-  --primary-foreground: #3a2508;
-  --secondary: rgba(78, 52, 30, 0.92);
-  --secondary-foreground: #fff6e3;
-  --muted: rgba(72, 48, 28, 0.94);
-  --muted-foreground: #e4cfae;
-  --accent: #df7a36;
-  --accent-foreground: #fffaf2;
-  --destructive: #e2524a;
-  --destructive-foreground: #fff6e3;
-  --success: #5fcf7e;
-  --gold: #f3c94c;
-  --energy: #6ee7c8;
-  --energy-foreground: #06261f;
-  --hud-blue: #6fc6d8;
-  --hud-orange: #ef913f;
-  --border: rgba(222, 165, 82, 0.42);
-  --input: #3b2817;
-  --ring: #f4c84a;
+  --background: #0c1730;
+  --foreground: #eef7ff;
+  --card: rgba(22, 40, 76, 0.82);
+  --card-foreground: #eef7ff;
+  --popover: #13234a;
+  --popover-foreground: #eef7ff;
+  --primary: #3fc4ff;
+  --primary-foreground: #06142e;
+  --secondary: rgba(30, 52, 96, 0.92);
+  --secondary-foreground: #eef7ff;
+  --muted: rgba(26, 46, 86, 0.94);
+  --muted-foreground: #a9c4e6;
+  --accent: #ff7a1f;
+  --accent-foreground: #fff8f0;
+  --destructive: #f0414b;
+  --destructive-foreground: #fff5f5;
+  --success: #4fe08c;
+  --gold: #ffd23a;
+  --energy: #5be6ff;
+  --energy-foreground: #04243a;
+  --hud-blue: #4cc9ff;
+  --hud-orange: #ff8a2a;
+  --hazard-ink: #15161c;
+  --border: rgba(92, 176, 255, 0.38);
+  --input: #0f1f42;
+  --ring: #3fc4ff;
 
-  --gradient-gold: linear-gradient(135deg, #ffe45b, #e98a2c);
-  --gradient-coral: linear-gradient(135deg, #f0a24a, #d4572f);
-  --gradient-energy: linear-gradient(135deg, #8ff5d7, #2fb9a2);
-  --gradient-mine: linear-gradient(180deg, rgba(40, 26, 14, 0.2) 0%, rgba(30, 19, 10, 0.85) 100%);
+  --gradient-gold: linear-gradient(135deg, #fff06a, #ff9f1c);
+  --gradient-coral: linear-gradient(135deg, #ffb13b, #ff4d1f);
+  --gradient-fire: linear-gradient(180deg, #ffc04a 0%, #ff7a1f 52%, #e2361d 100%);
+  --gradient-cyan: linear-gradient(180deg, #7fe3ff 0%, #2ea8ff 55%, #1663e0 100%);
+  --gradient-energy: linear-gradient(135deg, #8ff2ff, #2bb3f0);
+  --gradient-mine: linear-gradient(180deg, rgba(12, 23, 48, 0.2) 0%, rgba(8, 16, 34, 0.85) 100%);
+  --gradient-hazard: repeating-linear-gradient(135deg, #ffd23a 0 12px, #15161c 12px 24px);
   --gradient-sky:
-    radial-gradient(55% 35% at 50% -5%, rgba(255, 190, 80, 0.45) 0%, transparent 70%),
-    radial-gradient(45% 35% at 0% 40%, rgba(214, 110, 40, 0.35) 0%, transparent 70%),
-    radial-gradient(45% 35% at 100% 70%, rgba(240, 170, 60, 0.28) 0%, transparent 70%),
-    radial-gradient(70% 40% at 50% 110%, rgba(110, 60, 25, 0.6) 0%, transparent 70%),
-    linear-gradient(170deg, #3a2513 0%, #1b120b 55%, #120c07 100%);
+    radial-gradient(60% 32% at 50% -6%, rgba(110, 205, 255, 0.55) 0%, transparent 70%),
+    radial-gradient(45% 30% at 0% 35%, rgba(46, 140, 255, 0.35) 0%, transparent 70%),
+    radial-gradient(40% 28% at 100% 72%, rgba(255, 122, 31, 0.22) 0%, transparent 70%),
+    radial-gradient(70% 40% at 50% 112%, rgba(20, 60, 140, 0.6) 0%, transparent 70%),
+    linear-gradient(170deg, #1b3a72 0%, #0c1730 55%, #070f22 100%);
 
-  --shadow-glow: 0 10px 40px -8px rgba(244, 200, 74, 0.7);
-  --shadow-energy: 0 8px 30px -8px rgba(110, 231, 200, 0.7);
-  --shadow-card: 0 12px 32px -12px rgba(8, 4, 1, 0.8), inset 0 1px 0 rgba(255, 230, 180, 0.14), 0 0 0 1px rgba(222, 165, 82, 0.28), 0 0 24px -8px rgba(240, 160, 60, 0.35);
+  --shadow-glow: 0 10px 36px -8px rgba(63, 196, 255, 0.75);
+  --shadow-fire: 0 10px 34px -8px rgba(255, 110, 30, 0.8);
+  --shadow-energy: 0 8px 30px -8px rgba(91, 230, 255, 0.7);
+  --shadow-card: 0 14px 32px -12px rgba(2, 6, 18, 0.85), inset 0 1px 0 rgba(170, 225, 255, 0.16), 0 0 0 1px rgba(92, 176, 255, 0.3), 0 0 26px -8px rgba(63, 196, 255, 0.4);
 
   --miner-skin: #f2c39a;
   --miner-shirt: #c9452f;
@@ -106,49 +113,54 @@
 /* High-fidelity palette on browsers with modern color support. */
 @supports (color: oklch(0 0 0)) {
   :root {
-    --background: oklch(0.18 0.03 60);
-    --foreground: oklch(0.97 0.03 85);
-    --card: oklch(0.3 0.05 60 / 0.8);
-    --card-foreground: oklch(0.97 0.03 85);
-    --popover: oklch(0.24 0.04 60);
-    --popover-foreground: oklch(0.97 0.03 85);
-    --primary: oklch(0.86 0.15 85);
-    --primary-foreground: oklch(0.27 0.06 65);
-    --secondary: oklch(0.35 0.05 60 / 0.92);
-    --secondary-foreground: oklch(0.97 0.03 85);
-    --muted: oklch(0.33 0.05 60 / 0.94);
-    --muted-foreground: oklch(0.86 0.05 80);
-    --accent: oklch(0.67 0.15 50);
-    --accent-foreground: oklch(0.99 0.01 85);
-    --destructive: oklch(0.62 0.19 28);
-    --destructive-foreground: oklch(0.97 0.03 85);
-    --success: oklch(0.77 0.15 150);
-    --gold: oklch(0.86 0.15 88);
-    --energy: oklch(0.86 0.12 175);
-    --energy-foreground: oklch(0.24 0.05 175);
-    --hud-blue: oklch(0.78 0.09 210);
-    --hud-orange: oklch(0.74 0.16 55);
-    --border: oklch(0.76 0.12 70 / 0.42);
-    --input: oklch(0.29 0.04 60);
-    --ring: oklch(0.86 0.15 85);
+    --background: oklch(0.2 0.06 262);
+    --foreground: oklch(0.97 0.015 235);
+    --card: oklch(0.29 0.075 260 / 0.82);
+    --card-foreground: oklch(0.97 0.015 235);
+    --popover: oklch(0.25 0.075 262);
+    --popover-foreground: oklch(0.97 0.015 235);
+    --primary: oklch(0.78 0.15 228);
+    --primary-foreground: oklch(0.18 0.06 262);
+    --secondary: oklch(0.33 0.075 260 / 0.92);
+    --secondary-foreground: oklch(0.97 0.015 235);
+    --muted: oklch(0.31 0.07 260 / 0.94);
+    --muted-foreground: oklch(0.82 0.05 245);
+    --accent: oklch(0.72 0.19 50);
+    --accent-foreground: oklch(0.99 0.01 70);
+    --destructive: oklch(0.63 0.22 24);
+    --destructive-foreground: oklch(0.98 0.01 20);
+    --success: oklch(0.82 0.18 152);
+    --gold: oklch(0.89 0.17 92);
+    --energy: oklch(0.86 0.13 210);
+    --energy-foreground: oklch(0.24 0.06 230);
+    --hud-blue: oklch(0.8 0.14 228);
+    --hud-orange: oklch(0.74 0.18 52);
+    --hazard-ink: oklch(0.2 0.01 270);
+    --border: oklch(0.72 0.13 245 / 0.38);
+    --input: oklch(0.23 0.07 262);
+    --ring: oklch(0.78 0.15 228);
 
-    --gradient-gold: linear-gradient(135deg, oklch(0.93 0.16 98), oklch(0.75 0.16 58));
-    --gradient-coral: linear-gradient(135deg, oklch(0.77 0.14 65), oklch(0.6 0.16 40));
-    --gradient-energy: linear-gradient(135deg, oklch(0.92 0.1 170), oklch(0.7 0.12 180));
+    --gradient-gold: linear-gradient(135deg, oklch(0.95 0.17 105), oklch(0.78 0.18 62));
+    --gradient-coral: linear-gradient(135deg, oklch(0.82 0.16 70), oklch(0.65 0.22 35));
+    --gradient-fire: linear-gradient(180deg, oklch(0.85 0.16 75) 0%, oklch(0.72 0.19 50) 52%, oklch(0.6 0.21 32) 100%);
+    --gradient-cyan: linear-gradient(180deg, oklch(0.87 0.11 215) 0%, oklch(0.71 0.16 240) 55%, oklch(0.53 0.2 260) 100%);
+    --gradient-energy: linear-gradient(135deg, oklch(0.9 0.1 210), oklch(0.72 0.14 228));
+    --gradient-hazard: repeating-linear-gradient(135deg, oklch(0.89 0.17 92) 0 12px, oklch(0.2 0.01 270) 12px 24px);
     --gradient-sky:
-      radial-gradient(55% 35% at 50% -5%, oklch(0.83 0.14 75 / 0.45) 0%, transparent 70%),
-      radial-gradient(45% 35% at 0% 40%, oklch(0.62 0.15 50 / 0.35) 0%, transparent 70%),
-      radial-gradient(45% 35% at 100% 70%, oklch(0.78 0.14 70 / 0.28) 0%, transparent 70%),
-      radial-gradient(70% 40% at 50% 110%, oklch(0.38 0.08 55 / 0.6) 0%, transparent 70%),
-      linear-gradient(170deg, oklch(0.27 0.05 60) 0%, oklch(0.18 0.03 60) 55%, oklch(0.14 0.02 60) 100%);
+      radial-gradient(60% 32% at 50% -6%, oklch(0.82 0.12 230 / 0.55) 0%, transparent 70%),
+      radial-gradient(45% 30% at 0% 35%, oklch(0.62 0.18 255 / 0.35) 0%, transparent 70%),
+      radial-gradient(40% 28% at 100% 72%, oklch(0.72 0.19 50 / 0.22) 0%, transparent 70%),
+      radial-gradient(70% 40% at 50% 112%, oklch(0.36 0.13 260 / 0.6) 0%, transparent 70%),
+      linear-gradient(170deg, oklch(0.36 0.11 260) 0%, oklch(0.2 0.06 262) 55%, oklch(0.14 0.045 264) 100%);
   }
 }
 
 @supports (color: color-mix(in oklab, red, transparent)) {
   :root {
-    --shadow-glow: 0 10px 40px -8px color-mix(in oklab, var(--primary) 70%, transparent);
+    --shadow-glow: 0 10px 36px -8px color-mix(in oklab, var(--primary) 75%, transparent);
+    --shadow-fire: 0 10px 34px -8px color-mix(in oklab, var(--accent) 80%, transparent);
     --shadow-energy: 0 8px 30px -8px color-mix(in oklab, var(--energy) 70%, transparent);
-    --shadow-card: 0 12px 32px -12px oklch(0.08 0.02 60 / 80%), inset 0 1px 0 oklch(0.95 0.05 85 / 14%), 0 0 0 1px oklch(0.76 0.12 70 / 0.28), 0 0 24px -8px oklch(0.75 0.15 65 / 0.35);
+    --shadow-card: 0 14px 32px -12px oklch(0.08 0.03 262 / 85%), inset 0 1px 0 oklch(0.92 0.06 230 / 16%), 0 0 0 1px oklch(0.72 0.13 245 / 0.3), 0 0 26px -8px oklch(0.78 0.15 228 / 0.4);
   }
 }
 
@@ -295,7 +307,7 @@
 .text-destructive-foreground { color: var(--destructive-foreground); }
 .text-success { color: var(--success); }
 
-:root { --settings-panel: #2c1d10; --settings-value: #ffd84d; --settings-ink: #fff6e3;
+:root { --settings-panel: #13234a; --settings-value: #ffd23a; --settings-ink: #eef7ff;
 }
 .sensitivity-panel { --primary: var(--settings-value); --ring: var(--settings-value); color:var(--settings-ink); opacity:1; z-index:70; border:1px solid var(--border);
   background: radial-gradient(120% 70% at 0% 0%, color-mix(in oklab, var(--hud-blue) 30%, transparent), transparent 60%), radial-gradient(110% 70% at 100% 100%, color-mix(in oklab, var(--accent) 28%, transparent), transparent 60%), var(--settings-panel);
@@ -323,9 +335,9 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
 .mine-app-shell {
   isolation: isolate;
   background:
-    radial-gradient(85% 34% at 50% 0%, rgba(255, 183, 66, .16), transparent 72%),
-    linear-gradient(180deg, rgba(41, 23, 12, .94), rgba(22, 13, 8, .98));
-  border-inline: 1px solid rgba(255, 204, 112, .18);
+    radial-gradient(85% 30% at 50% 0%, color-mix(in oklab, var(--hud-blue) 22%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in oklab, var(--background) 70%, transparent), color-mix(in oklab, var(--background) 96%, transparent));
+  border-inline: 1px solid color-mix(in oklab, var(--hud-blue) 22%, transparent);
 }
 .mine-header { padding-top: max(.8rem, env(safe-area-inset-top)); }
 .profile-wood-card {
@@ -428,12 +440,12 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
 .claim-gold-copy small { color:#e4ffe0; font-size:.59rem; font-weight:900; letter-spacing:.13em; }
 .claim-gold-arrow { position:absolute; right:1rem; color:rgba(255,255,255,.8); font-size:2rem; line-height:1; }
 .mine-rules-note { color:#d2b58e; font-size:.61rem; line-height:1.3; text-align:center; }
-.mine-bottom-nav { padding-top:.35rem; background:linear-gradient(180deg,transparent,rgba(20,10,5,.96) 19%); }
-.mine-bottom-nav-inner { gap:.18rem; padding:.48rem .35rem .38rem; border:2px solid #b87937; border-radius:1.15rem; background:linear-gradient(180deg,#81451f,#4a2815 55%,#321a0d); box-shadow:inset 0 2px 0 rgba(255,224,166,.22),0 4px 0 #221006,0 9px 20px rgba(0,0,0,.45); }
-.mine-nav-item { display:flex; min-width:0; min-height:3.35rem; flex-direction:column; align-items:center; justify-content:center; gap:.18rem; padding:.28rem .08rem; border-radius:.8rem; color:#e8c79c; font-size:.56rem; font-weight:800; line-height:1.1; text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.5); transition:color .15s ease,background .15s ease; }
-.mine-nav-item svg { color:#f7d28c; filter:drop-shadow(0 2px 1px rgba(0,0,0,.35)); }
-.mine-nav-item[data-status="active"] { color:#452509; background:linear-gradient(180deg,#ffec80,#e99a29); box-shadow:inset 0 2px 0 rgba(255,255,255,.5),0 2px 0 #92521b; text-shadow:none; }
-.mine-nav-item[data-status="active"] svg { color:#713b0c; }
+.mine-bottom-nav { padding-top:.35rem; background:linear-gradient(180deg,transparent,color-mix(in oklab, var(--background) 96%, transparent) 19%); }
+.mine-bottom-nav-inner { gap:.18rem; padding:.48rem .35rem .38rem; border:2px solid color-mix(in oklab, var(--hud-blue) 55%, transparent); border-radius:1.15rem; background:linear-gradient(180deg, color-mix(in oklab, var(--secondary) 100%, transparent), color-mix(in oklab, var(--background) 92%, transparent)); box-shadow:inset 0 2px 0 color-mix(in oklab, var(--hud-blue) 25%, transparent),0 4px 0 color-mix(in oklab, var(--background) 80%, black),0 0 22px -6px color-mix(in oklab, var(--hud-blue) 60%, transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.mine-nav-item { display:flex; min-width:0; min-height:3.35rem; flex-direction:column; align-items:center; justify-content:center; gap:.18rem; padding:.28rem .08rem; border-radius:.8rem; color:var(--muted-foreground); font-size:.58rem; font-weight:800; letter-spacing:.02em; line-height:1.1; text-align:center; text-transform:uppercase; transition:color .15s ease,background .15s ease; }
+.mine-nav-item svg { color:var(--hud-blue); filter:drop-shadow(0 0 4px color-mix(in oklab, var(--hud-blue) 55%, transparent)); }
+.mine-nav-item[data-status="active"] { color:var(--primary-foreground); background:var(--gradient-cyan); box-shadow:inset 0 2px 0 color-mix(in oklab, white 55%, transparent),0 0 16px -2px color-mix(in oklab, var(--hud-blue) 85%, transparent); }
+.mine-nav-item[data-status="active"] svg { color:var(--primary-foreground); filter:none; }
 .mine-nav-item:active { transform:scale(.97); }
 @media (max-width:365px) {
   .profile-wood-card { gap:.5rem; padding:.55rem; }
@@ -755,3 +767,140 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--primary
 @media (max-aspect-ratio: 9 / 16) {
   .reference-home-shell { width: min(100vw,448px); }
 }
+
+
+/* ---------- Tactical Neon UI (matches the shooter game art) ---------- */
+@utility bg-fire { background-image: var(--gradient-fire); }
+@utility bg-cyan { background-image: var(--gradient-cyan); }
+@utility bg-hazard { background-image: var(--gradient-hazard); }
+@utility shadow-fire { box-shadow: var(--shadow-fire); }
+
+/* Page titles get a neon glow and a hazard-stripe underline. */
+.mine-header h1 {
+  position: relative; display: inline-block; padding-bottom: .35rem;
+  font-family: var(--font-display); font-size: 1.85rem; line-height: 1; letter-spacing: .02em;
+  color: var(--foreground);
+  text-shadow: 0 0 14px color-mix(in oklab, var(--hud-blue) 75%, transparent), 0 3px 0 color-mix(in oklab, var(--background) 80%, black);
+}
+.mine-header h1::after {
+  content: ""; position: absolute; left: 0; bottom: 0; width: 3.4rem; height: .3rem; border-radius: 999px;
+  background-image: var(--gradient-hazard);
+}
+h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black); }
+
+.hud-label { color: var(--muted-foreground); font-size: .66rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.hud-panel {
+  border: 1px solid var(--border); border-radius: 1.1rem; color: var(--card-foreground);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--hud-blue) 8%, transparent), transparent 55%), var(--card);
+  box-shadow: var(--shadow-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.hud-chip-button {
+  display: flex; align-items: center; justify-content: center; gap: .5rem; padding: .8rem .5rem;
+  border: 1px solid var(--border); border-radius: 1rem; color: var(--foreground); background: var(--secondary);
+  font-size: .85rem; font-weight: 700; box-shadow: inset 0 1px 0 color-mix(in oklab, var(--hud-blue) 25%, transparent);
+  transition: transform .15s ease;
+}
+.hud-chip-button:active { transform: scale(.96); }
+
+/* Wallet: balance, connect and withdraw live in one card. */
+.wallet-card {
+  position: relative; overflow: visible; padding: 1.1rem; border: 2px solid color-mix(in oklab, var(--hud-blue) 55%, transparent);
+  border-radius: 1.6rem; color: var(--card-foreground);
+  background:
+    radial-gradient(70% 60% at 100% 0%, color-mix(in oklab, var(--hud-blue) 28%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 0% 100%, color-mix(in oklab, var(--accent) 20%, transparent), transparent 70%),
+    var(--card);
+  box-shadow: var(--shadow-card), 0 0 34px -10px color-mix(in oklab, var(--hud-blue) 70%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.wallet-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.wallet-card-title { margin-top: .1rem; font-family: var(--font-display); font-size: 1.6rem; line-height: 1; }
+.wallet-balance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: .9rem; }
+.wallet-balance-tile {
+  min-width: 0; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: 1rem;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--hud-blue) 10%, transparent), transparent), var(--muted);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 10%, transparent);
+}
+.wallet-balance-value { margin-top: .2rem; font-family: var(--font-display); font-size: clamp(1.5rem, 7vw, 2rem); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.coin-dot { display: inline-block; width: 1.15rem; height: 1.15rem; flex: 0 0 auto; border-radius: 50%; background-image: var(--gradient-gold); box-shadow: 0 0 10px color-mix(in oklab, var(--gold) 70%, transparent), inset 0 -2px 0 color-mix(in oklab, var(--accent) 70%, transparent); }
+.hazard-divider { height: .4rem; margin: 1rem -.1rem .9rem; border-radius: 999px; background-image: var(--gradient-hazard); opacity: .9; }
+.wallet-section-title { margin-bottom: .55rem; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.1; color: var(--foreground); }
+.wallet-amount-field {
+  display: flex; align-items: center; gap: .4rem; margin-top: .35rem; padding: 0 .85rem;
+  border: 2px solid var(--border); border-radius: 1rem; background: var(--input);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.wallet-amount-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 30%, transparent); }
+.wallet-amount-prefix { color: var(--gold); font-family: var(--font-display); font-size: 1.4rem; }
+.wallet-amount-input { min-width: 0; flex: 1 1 auto; padding: .8rem 0; border: 0; outline: none; color: var(--foreground); background: transparent; font-family: var(--font-display); font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.wallet-amount-suffix { color: var(--muted-foreground); font-size: .7rem; font-weight: 800; letter-spacing: .1em; }
+.wallet-rate-note { margin: .45rem 0 .85rem; color: var(--muted-foreground); font-size: .72rem; font-weight: 600; }
+
+/* Connect button replaces the old wallet logo. */
+.trust-connect-button {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .6rem .8rem; border: 2px solid color-mix(in oklab, var(--hud-blue) 80%, white);
+  border-radius: 999px; color: var(--primary-foreground); background: var(--gradient-cyan);
+  font-size: .78rem; font-weight: 800; white-space: nowrap;
+  box-shadow: inset 0 2px 0 color-mix(in oklab, white 55%, transparent), 0 3px 0 color-mix(in oklab, var(--primary) 45%, black), var(--shadow-glow);
+  transition: transform .15s ease;
+}
+.trust-connect-button:active:not(:disabled) { transform: translateY(2px); }
+.trust-connect-button:disabled { opacity: .75; }
+.trust-connect-button.is-connected {
+  border-color: color-mix(in oklab, var(--success) 75%, white); color: var(--primary-foreground);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--success) 80%, white), var(--success));
+  box-shadow: inset 0 2px 0 color-mix(in oklab, white 55%, transparent), 0 3px 0 color-mix(in oklab, var(--success) 45%, black), 0 0 18px -4px color-mix(in oklab, var(--success) 80%, transparent);
+}
+@keyframes wallet-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-7px) rotate(-2deg); }
+  30% { transform: translateX(6px) rotate(2deg); }
+  45% { transform: translateX(-5px) rotate(-1deg); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+@utility animate-wallet-shake { animation: wallet-shake .55s ease-in-out both; }
+
+/* Small "Connect wallet first" bubble that slides out from the button's left side. */
+.connect-hint {
+  position: absolute; top: 50%; right: calc(100% + .6rem); z-index: 20; padding: .45rem .7rem;
+  border: 1px solid color-mix(in oklab, var(--destructive) 70%, white); border-radius: .75rem;
+  color: var(--destructive-foreground); background: var(--destructive); font-size: .72rem; font-weight: 800; white-space: nowrap;
+  box-shadow: 0 8px 20px -6px color-mix(in oklab, var(--destructive) 70%, transparent);
+  transform: translateY(-50%); animation: connect-hint-in .28s cubic-bezier(.2,.9,.3,1.3) both;
+}
+.connect-hint::after {
+  content: ""; position: absolute; top: 50%; right: -.35rem; width: .7rem; height: .7rem;
+  background: var(--destructive); transform: translateY(-50%) rotate(45deg);
+  border-top: 1px solid color-mix(in oklab, var(--destructive) 70%, white); border-right: 1px solid color-mix(in oklab, var(--destructive) 70%, white);
+}
+@keyframes connect-hint-in { from { opacity: 0; transform: translate(18px, -50%) scale(.85); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
+
+/* Big fire-orange action button, like the game's attack button. */
+.fire-button {
+  display: flex; min-height: 3.6rem; align-items: center; justify-content: center; gap: .5rem;
+  border: 2px solid color-mix(in oklab, var(--gold) 70%, white); border-radius: 1.2rem;
+  color: var(--accent-foreground); background: var(--gradient-fire);
+  font-family: var(--font-display); font-size: 1.45rem; letter-spacing: .03em;
+  text-shadow: 0 2px 0 color-mix(in oklab, var(--accent) 55%, black);
+  box-shadow: inset 0 2px 0 color-mix(in oklab, white 55%, transparent), 0 5px 0 color-mix(in oklab, var(--accent) 50%, black), var(--shadow-fire);
+  transition: transform .15s ease, filter .15s ease;
+}
+.fire-button:active:not(:disabled) { transform: translateY(3px); }
+.fire-button:disabled { filter: saturate(.6); opacity: .7; }
+
+/* Withdraw history status chips. */
+.history-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; padding: .35rem .7rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
+.history-status.is-pending { color: var(--hazard-ink); background-image: var(--gradient-gold); box-shadow: 0 0 12px -3px color-mix(in oklab, var(--gold) 80%, transparent); }
+.history-status.is-rejected { color: var(--destructive-foreground); background: var(--destructive); }
+.history-view-button {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; padding: .45rem .9rem;
+  border: 1px solid color-mix(in oklab, var(--success) 70%, white); border-radius: 999px;
+  color: var(--primary-foreground); background: var(--success); font-size: .78rem; font-weight: 800;
+  box-shadow: 0 3px 0 color-mix(in oklab, var(--success) 45%, black), 0 0 14px -3px color-mix(in oklab, var(--success) 80%, transparent);
+  transition: transform .15s ease;
+}
+.history-view-button:active { transform: translateY(2px); }
+
+/* Shared card treatment for Leaderboard and Refer. */
+.mine-main .rounded-3xl.bg-card { border-width: 2px; border-color: color-mix(in oklab, var(--hud-blue) 45%, transparent); }
