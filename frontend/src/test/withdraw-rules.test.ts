@@ -23,3 +23,9 @@ describe("Trust Wallet device routing", () => {
   it("Telegram Desktop goes to the Trust Wallet extension", () => expect(isPhoneDevice("tdesktop", "Mozilla/5.0 (Windows NT 10.0)")).toBe(false));
   it("a phone browser outside Telegram goes to the app", () => expect(isPhoneDevice(undefined, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe(true));
 });
+
+describe("coins shown under the amount", () => {
+  it("$1 needs 100,000 coins", () => expect(coinsForWithdrawUsd(1)).toBe(100000));
+  it("$0.05 needs 5,000 coins", () => expect(coinsForWithdrawUsd(0.05)).toBe(5000));
+  it("an empty amount needs 0 coins", () => expect(coinsForWithdrawUsd(Number(""))).toBe(0));
+});

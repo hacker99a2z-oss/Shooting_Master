@@ -835,6 +835,25 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 .wallet-amount-input { min-width: 0; flex: 1 1 auto; padding: .8rem 0; border: 0; outline: none; color: var(--foreground); background: transparent; font-family: var(--font-display); font-size: 1.4rem; font-variant-numeric: tabular-nums; }
 .wallet-amount-suffix { color: var(--muted-foreground); font-size: .7rem; font-weight: 800; letter-spacing: .1em; }
 .wallet-rate-note { margin: .45rem 0 .85rem; color: var(--muted-foreground); font-size: .72rem; font-weight: 600; }
+.wallet-rate-note.is-short { color: var(--destructive); }
+.wallet-rate-coins { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }
+.wallet-rate-note.is-short .wallet-rate-coins { color: inherit; }
+.wallet-amount-label-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .5rem; }
+.wallet-network-badge {
+  padding: .15rem .5rem; border: 1px solid color-mix(in oklab, var(--gold) 55%, transparent); border-radius: 999px;
+  color: var(--gold); background: color-mix(in oklab, var(--gold) 12%, transparent);
+  font-size: .6rem; font-weight: 800; letter-spacing: .04em; white-space: nowrap;
+}
+
+/* Trust Wallet shield logo on the Connect button (official brand blue + green). */
+.trust-logo {
+  --trust-blue: oklch(0.45 0.31 264);
+  --trust-green: oklch(0.88 0.2 152);
+  display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  background: oklch(1 0 0); box-shadow: 0 1px 0 color-mix(in oklab, var(--primary) 45%, black);
+}
+.trust-logo-left { fill: var(--trust-blue); }
+.trust-logo-right { fill: none; stroke: var(--trust-blue); stroke-width: 1.6; stroke-linejoin: round; }
 
 /* Connect button replaces the old wallet logo. */
 .trust-connect-button {

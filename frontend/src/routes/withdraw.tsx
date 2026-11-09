@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { BadgeCheck, CheckCircle2, Clock3, ExternalLink, Headphones, History, Loader2, ShieldCheck } from "lucide-react";
+import { BadgeCheck, CheckCircle2, Clock3, ExternalLink, Headphones, History, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
 import { getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal } from "@/lib/api.functions";
@@ -10,7 +10,7 @@ import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, validBep20Address } from "@/lib/wallet-rules";
 import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
+import { TRUST_EXTENSION_URL, TrustAppMissingError, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -75,6 +75,28 @@ async function switchToBnbSmartChain(provider: TrustWalletProvider) {
   if (Number(confirmedChain) !== BSC_CHAIN_ID) {
     throw new Error("Please select BNB Smart Chain (BEP-20) in Trust Wallet.");
   }
+}
+
+/** The PC extension can announce itself a moment late, so ask again briefly before giving up. */
+async function findTrustExtension(): Promise<TrustWalletProvider | null> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const provider = getInjectedTrustWallet();
+    if (provider) return provider;
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+  }
+  return null;
+}
+
+/** Trust Wallet shield logo shown on the Connect button. */
+function TrustWalletLogo() {
+  return (
+    <span className="trust-logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="16" height="16">
+        <path className="trust-logo-left" d="M12 2.4 4.2 5.3v5.9c0 4.9 3.3 8.9 7.8 10.4V2.4Z" />
+        <path className="trust-logo-right" d="M12 2.4v19.2c4.5-1.5 7.8-5.5 7.8-10.4V5.3L12 2.4Z" />
+      </svg>
+    </span>
+  );
 }
 
 function firstAccount(accounts: unknown): string {
@@ -178,14 +200,17 @@ function Withdraw() {
       let provider: TrustWalletProvider | null = getInjectedTrustWallet();
       if (!provider) {
         if (currentDeviceIsPhone()) {
-          // Phone: open the Trust Wallet app to approve, then come back here.
-          toast.info("Opening Trust Wallet…");
+          // Phone: open the Trust Wallet app directly (Play Store / App Store if it is not installed).
+          toast.info("Opening Trust Wallet… Approve USDT on BNB Smart Chain (BEP-20).");
           provider = await connectTrustWalletSession();
         } else {
-          // PC: send the player to the Trust Wallet extension / web page.
-          toast.info("Opening Trust Wallet extension. Install or unlock it, then tap Connect again.");
-          openLink(TRUST_EXTENSION_URL);
-          return;
+          // PC: connect the Trust Wallet extension, or open its download page when it is missing.
+          provider = await findTrustExtension();
+          if (!provider) {
+            toast.info("Trust Wallet extension not found. Install it, then tap Connect again.");
+            openLink(TRUST_EXTENSION_URL);
+            return;
+          }
         }
       }
       if (!provider) throw new Error("Could not open Trust Wallet.");
@@ -204,6 +229,10 @@ function Withdraw() {
       haptic("success");
       toast.success("Trust Wallet connected.");
     } catch (error) {
+      if (error instanceof TrustAppMissingError) {
+        toast.info(error.message);
+        return;
+      }
       const code = Number((error as { code?: number | string })?.code);
       toast.error(code === 4001 ? "Wallet connection was cancelled." : error instanceof Error ? error.message : "Could not connect Trust Wallet.");
     } finally {
@@ -275,8 +304,8 @@ function Withdraw() {
               disabled={connecting}
               className={"trust-connect-button" + (connected ? " is-connected" : "") + (nudge ? " animate-wallet-shake" : "")}
             >
-              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-              <span>{connecting ? "Connecting…" : connected ? "Connected" : "Connect Trust Wallet"}</span>
+              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <TrustWalletLogo />}
+              <span>{connecting ? "Connecting…" : connected ? "Connected" : "Connect"}</span>
             </button>
           </div>
         </div>
@@ -299,7 +328,10 @@ function Withdraw() {
 
         <h3 className="wallet-section-title">Withdraw to Trust Wallet</h3>
         <label className="block">
-          <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
+          <span className="wallet-amount-label-row">
+            <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
+            <span className="wallet-network-badge">BNB Smart Chain (BEP-20)</span>
+          </span>
           <div className="wallet-amount-field">
             <span className="wallet-amount-prefix">$</span>
             <input
@@ -311,7 +343,9 @@ function Withdraw() {
             <span className="wallet-amount-suffix">USDT</span>
           </div>
         </label>
-        <p className="wallet-rate-note">$0.02 = 2,000 coins · BNB Smart Chain (BEP-20)</p>
+        <p className={"wallet-rate-note" + (neededCoins > coins ? " is-short" : "")}>
+          Needs <span className="wallet-rate-coins">{neededCoins.toLocaleString()}</span> coins
+        </p>
         <button onClick={submit} disabled={busy} className="fire-button w-full">
           {busy ? "Sending…" : "Withdraw"}
         </button>
