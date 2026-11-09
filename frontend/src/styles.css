@@ -802,6 +802,37 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 }
 .hud-chip-button:active { transform: scale(.96); }
 
+/* Home: profile card — photo, name and ID on the left, coins on the right. */
+.profile-card {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.05rem;
+  border: 2px solid color-mix(in oklab, var(--hud-blue) 55%, transparent); border-radius: 1.6rem; color: var(--card-foreground);
+  background:
+    radial-gradient(70% 80% at 100% 0%, color-mix(in oklab, var(--gold) 22%, transparent), transparent 70%),
+    radial-gradient(60% 70% at 0% 100%, color-mix(in oklab, var(--hud-blue) 28%, transparent), transparent 70%),
+    var(--card);
+  box-shadow: var(--shadow-card), 0 0 34px -10px color-mix(in oklab, var(--hud-blue) 70%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.profile-card-left { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: .75rem; }
+.profile-avatar {
+  width: 3.6rem; height: 3.6rem; flex: 0 0 auto; border-radius: 50%; object-fit: cover;
+  border: 3px solid color-mix(in oklab, var(--gold) 85%, white);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--hud-blue) 45%, transparent), 0 0 18px -4px color-mix(in oklab, var(--gold) 80%, transparent);
+}
+.profile-avatar-fallback {
+  display: grid; place-items: center; color: var(--primary-foreground); background: var(--gradient-cyan);
+  font-family: var(--font-display); font-size: 1.5rem;
+}
+.profile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 1.25rem; line-height: 1.1; color: var(--foreground); }
+.profile-id { margin-top: .2rem; color: var(--muted-foreground); font-size: .72rem; font-weight: 700; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.profile-coins {
+  flex: 0 0 auto; padding: .55rem .75rem; text-align: right;
+  border: 1px solid color-mix(in oklab, var(--gold) 45%, transparent); border-radius: 1rem;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--gold) 14%, transparent), transparent), var(--muted);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 10%, transparent);
+}
+.profile-coins-value { display: flex; align-items: center; justify-content: flex-end; gap: .4rem; margin-top: .15rem; font-family: var(--font-display); font-size: clamp(1.05rem, 5vw, 1.45rem); line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 /* Wallet: balance, connect and withdraw live in one card. */
 .wallet-card {
   position: relative; overflow: visible; padding: 1.1rem; border: 2px solid color-mix(in oklab, var(--hud-blue) 55%, transparent);
