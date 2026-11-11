@@ -954,3 +954,90 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 
 /* Shared card treatment for Leaderboard and Refer. */
 .mine-main .rounded-3xl.bg-card { border-width: 2px; border-color: color-mix(in oklab, var(--hud-blue) 45%, transparent); }
+
+/* Home: section headings (Battle Arena, How To Play) with the hazard-stripe underline. */
+.home-section-title {
+  position: relative; align-self: flex-start; margin: .35rem 0 -.1rem; padding-bottom: .38rem;
+  font-family: var(--font-display); font-size: 1.45rem; line-height: 1; letter-spacing: .02em; color: var(--foreground);
+  text-shadow: 0 0 14px color-mix(in oklab, var(--hud-blue) 70%, transparent), 0 3px 0 color-mix(in oklab, var(--background) 80%, black);
+}
+.home-section-title::after {
+  content: ""; position: absolute; left: 0; bottom: 0; width: 2.8rem; height: .26rem; border-radius: 999px;
+  background-image: var(--gradient-hazard);
+}
+
+/* Home: Battle Arena card — the arena art fills the whole card. */
+.arena-card {
+  position: relative; overflow: hidden; isolation: isolate; aspect-ratio: 1250 / 680; min-height: 12.5rem;
+  border: 2px solid color-mix(in oklab, var(--hud-blue) 60%, transparent); border-radius: 1.6rem; background: var(--card);
+  box-shadow: var(--shadow-card), 0 0 34px -10px color-mix(in oklab, var(--hud-blue) 70%, transparent);
+}
+.arena-card-image { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; }
+.arena-card-shade {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(90deg, color-mix(in oklab, var(--background) 88%, transparent) 0%, color-mix(in oklab, var(--background) 45%, transparent) 42%, transparent 68%),
+    linear-gradient(0deg, color-mix(in oklab, var(--background) 70%, transparent) 0%, transparent 34%);
+}
+.arena-card-copy { position: absolute; top: .9rem; left: .95rem; max-width: 58%; }
+.arena-card-heading {
+  font-family: var(--font-display); font-size: clamp(1.2rem, 5.6vw, 1.6rem); line-height: 1.02; color: var(--foreground);
+  text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 80%, black), 0 0 12px color-mix(in oklab, var(--hud-blue) 55%, transparent);
+}
+.arena-card-reward {
+  display: flex; align-items: flex-start; gap: .35rem; margin-top: .45rem; color: var(--foreground);
+  font-size: .72rem; font-weight: 700; line-height: 1.3; text-shadow: 0 1px 3px var(--background);
+}
+.arena-card-reward .coin-dot { width: .9rem; height: .9rem; margin-top: .05rem; }
+.arena-card-reward strong { color: var(--gold); font-weight: 900; }
+.arena-play-button {
+  position: absolute; left: 50%; bottom: .75rem; transform: translateX(-50%);
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-width: 8.5rem; padding: .55rem 1.4rem;
+  border: 2px solid color-mix(in oklab, var(--gold) 70%, white); border-radius: 999px;
+  color: var(--accent-foreground); background: var(--gradient-fire);
+  font-family: var(--font-display); font-size: 1.3rem; letter-spacing: .03em; line-height: 1;
+  text-shadow: 0 2px 0 color-mix(in oklab, var(--accent) 55%, black);
+  box-shadow: inset 0 2px 0 color-mix(in oklab, white 55%, transparent), 0 4px 0 color-mix(in oklab, var(--accent) 50%, black), var(--shadow-fire);
+  transition: transform .15s ease;
+}
+.arena-play-button:active { transform: translateX(-50%) translateY(3px); }
+
+/* Home: small Games card on the left, Daily Games card filling the rest of the row. */
+.home-stats-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 2fr); gap: .65rem; }
+.home-stat-card {
+  display: flex; min-width: 0; flex-direction: column; padding: .8rem .85rem;
+  border: 2px solid color-mix(in oklab, var(--hud-blue) 50%, transparent); border-radius: 1.25rem; color: var(--card-foreground);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--hud-blue) 12%, transparent), transparent 60%), var(--card);
+  box-shadow: var(--shadow-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.home-stat-title {
+  display: flex; align-items: center; gap: .3rem; color: var(--muted-foreground);
+  font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+}
+.home-stat-title svg { color: var(--hud-blue); }
+.home-games-card { align-items: flex-start; justify-content: space-between; }
+.home-games-count {
+  margin-top: .4rem; font-family: var(--font-display); font-size: clamp(1.6rem, 8vw, 2.2rem); line-height: 1;
+  font-variant-numeric: tabular-nums; color: var(--foreground); text-shadow: 0 0 14px color-mix(in oklab, var(--hud-blue) 60%, transparent);
+}
+.home-daily-card { gap: .55rem; }
+.home-daily-progress { display: flex; align-items: center; gap: .55rem; }
+.home-daily-track {
+  position: relative; overflow: hidden; height: .55rem; flex: 1 1 auto; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--input); box-shadow: inset 0 2px 4px color-mix(in oklab, black 50%, transparent);
+}
+.home-daily-track span {
+  display: block; height: 100%; border-radius: inherit; background: var(--gradient-gold);
+  box-shadow: 0 0 10px color-mix(in oklab, var(--gold) 70%, transparent); transition: width .35s ease;
+}
+.home-daily-count { flex: 0 0 auto; font-family: var(--font-display); font-size: 1rem; line-height: 1; font-variant-numeric: tabular-nums; color: var(--gold); }
+.home-claim-button {
+  display: flex; align-items: center; justify-content: center; padding: .5rem .8rem;
+  border: 2px solid color-mix(in oklab, var(--success) 70%, white); border-radius: .9rem;
+  color: var(--primary-foreground); background: linear-gradient(180deg, color-mix(in oklab, var(--success) 75%, white), var(--success));
+  font-family: var(--font-display); font-size: 1.05rem; letter-spacing: .03em; line-height: 1;
+  box-shadow: inset 0 2px 0 color-mix(in oklab, white 55%, transparent), 0 3px 0 color-mix(in oklab, var(--success) 45%, black);
+  transition: transform .15s ease;
+}
+.home-claim-button:active:not(:disabled) { transform: translateY(2px); }
+.home-claim-button:disabled { cursor: not-allowed; filter: saturate(.45); opacity: .7; }
