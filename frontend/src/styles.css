@@ -1005,7 +1005,7 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 /* Home: small Games card on the left, Daily Games card filling the rest of the row. */
 .home-stats-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 2fr); gap: .65rem; }
 .home-stat-card {
-  display: flex; min-width: 0; flex-direction: column; padding: .8rem .85rem;
+  display: flex; min-width: 0; flex-direction: column; padding: .5rem .7rem;
   border: 2px solid color-mix(in oklab, var(--hud-blue) 50%, transparent); border-radius: 1.25rem; color: var(--card-foreground);
   background: linear-gradient(180deg, color-mix(in oklab, var(--hud-blue) 12%, transparent), transparent 60%), var(--card);
   box-shadow: var(--shadow-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -1017,10 +1017,11 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 .home-stat-title svg { color: var(--hud-blue); }
 .home-games-card { align-items: flex-start; justify-content: space-between; }
 .home-games-count {
-  margin-top: .4rem; font-family: var(--font-display); font-size: clamp(1.6rem, 8vw, 2.2rem); line-height: 1;
+  align-self: stretch; margin-top: .3rem; text-align: center;
+  font-family: var(--font-display); font-size: clamp(1.5rem, 7vw, 2rem); line-height: 1;
   font-variant-numeric: tabular-nums; color: var(--foreground); text-shadow: 0 0 14px color-mix(in oklab, var(--hud-blue) 60%, transparent);
 }
-.home-daily-card { gap: .55rem; }
+.home-daily-card { gap: .38rem; }
 .home-daily-progress { display: flex; align-items: center; gap: .55rem; }
 .home-daily-track {
   position: relative; overflow: hidden; height: .55rem; flex: 1 1 auto; border: 1px solid var(--border); border-radius: 999px;
@@ -1032,7 +1033,7 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 }
 .home-daily-count { flex: 0 0 auto; font-family: var(--font-display); font-size: 1rem; line-height: 1; font-variant-numeric: tabular-nums; color: var(--gold); }
 .home-claim-button {
-  display: flex; align-items: center; justify-content: center; padding: .5rem .8rem;
+  display: flex; align-items: center; justify-content: center; padding: .38rem .8rem;
   border: 2px solid color-mix(in oklab, var(--success) 70%, white); border-radius: .9rem;
   color: var(--primary-foreground); background: linear-gradient(180deg, color-mix(in oklab, var(--success) 75%, white), var(--success));
   font-family: var(--font-display); font-size: 1.05rem; letter-spacing: .03em; line-height: 1;
