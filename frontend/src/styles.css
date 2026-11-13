@@ -1048,8 +1048,7 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
   position: fixed; inset: 0; z-index: 50; margin: 0 auto; max-width: 28rem; overflow: hidden;
   background: var(--background); touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.arena-world { position: absolute; inset: 0; cursor: grab; touch-action: none; }
-.arena-world:active { cursor: grabbing; }
+.arena-world { position: absolute; inset: 0; touch-action: none; }
 .arena-game-coins {
   position: absolute; top: calc(.75rem + env(safe-area-inset-top)); right: .75rem; z-index: 2;
   display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .8rem .35rem .45rem;
@@ -1058,4 +1057,54 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
   box-shadow: 0 4px 14px -4px color-mix(in oklab, var(--background) 80%, black);
   font-family: var(--font-display); font-size: 1.2rem; line-height: 1; font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+
+/* Battle Arena controls: joystick bottom-left, Shield and Shoot bottom-right (thumb sized). */
+.arena-controls { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.arena-joystick {
+  position: absolute; left: 1rem; bottom: calc(1.6rem + env(safe-area-inset-bottom));
+  width: 8.25rem; height: 8.25rem; border-radius: 999px; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center;
+  background: radial-gradient(circle, color-mix(in oklab, var(--background) 35%, transparent) 55%, color-mix(in oklab, var(--background) 60%, transparent));
+  border: 3px solid color-mix(in oklab, var(--foreground) 55%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--hud-blue) 40%, transparent), inset 0 0 18px color-mix(in oklab, var(--hud-blue) 30%, transparent);
+  backdrop-filter: blur(2px);
+}
+.arena-joystick[data-active] { border-color: color-mix(in oklab, var(--hud-blue) 85%, transparent); }
+.arena-joystick-knob {
+  width: 3.6rem; height: 3.6rem; border-radius: 999px; pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--hud-blue) 55%, white), var(--hud-blue) 55%, color-mix(in oklab, var(--hud-blue) 60%, black));
+  border: 3px solid color-mix(in oklab, white 80%, transparent);
+  box-shadow: 0 0 16px color-mix(in oklab, var(--hud-blue) 75%, transparent);
+  transition: transform .06s linear;
+}
+.arena-joystick-arrow {
+  position: absolute; width: 0; height: 0; pointer-events: none;
+  border: 7px solid transparent; opacity: .85;
+}
+.arena-joystick-arrow-up { top: .45rem; border-bottom: 9px solid var(--foreground); border-top-width: 0; }
+.arena-joystick-arrow-down { bottom: .45rem; border-top: 9px solid var(--foreground); border-bottom-width: 0; }
+.arena-joystick-arrow-left { left: .45rem; border-right: 9px solid var(--foreground); border-left-width: 0; }
+.arena-joystick-arrow-right { right: .45rem; border-left: 9px solid var(--foreground); border-right-width: 0; }
+
+.arena-shield-button, .arena-shoot-button {
+  position: absolute; border-radius: 999px; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center; -webkit-tap-highlight-color: transparent;
+  transition: transform .08s ease, filter .08s ease;
+}
+.arena-shield-button[data-active], .arena-shoot-button[data-active] { transform: scale(.92); filter: brightness(1.25); }
+.arena-button-icon { width: 55%; height: 55%; }
+.arena-shield-button {
+  right: 6.9rem; bottom: calc(6.6rem + env(safe-area-inset-bottom)); width: 4.6rem; height: 4.6rem;
+  color: var(--foreground);
+  background: radial-gradient(circle at 40% 30%, color-mix(in oklab, var(--hud-blue) 70%, white), var(--hud-blue) 50%, color-mix(in oklab, var(--hud-blue) 45%, black));
+  border: 3px solid color-mix(in oklab, white 75%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklab, var(--hud-blue) 80%, transparent), inset 0 -4px 8px color-mix(in oklab, var(--hud-blue) 40%, black);
+}
+.arena-shoot-button {
+  right: 1rem; bottom: calc(1.6rem + env(safe-area-inset-bottom)); width: 6.2rem; height: 6.2rem;
+  color: var(--foreground);
+  background: radial-gradient(circle, color-mix(in oklab, var(--hud-orange) 25%, var(--background)) 52%, color-mix(in oklab, var(--hud-orange) 45%, black) 70%);
+  border: 4px solid var(--hud-orange);
+  box-shadow: 0 0 22px color-mix(in oklab, var(--hud-orange) 85%, transparent), inset 0 0 16px color-mix(in oklab, var(--hud-orange) 70%, transparent);
 }
