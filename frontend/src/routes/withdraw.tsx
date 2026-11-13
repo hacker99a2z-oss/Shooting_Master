@@ -8,7 +8,7 @@ import { usePlayer } from "@/hooks/use-player";
 import { getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
-import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, validBep20Address } from "@/lib/wallet-rules";
+import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
 import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal } from "@/lib/withdraw-rules";
 import { TRUST_EXTENSION_URL, TrustAppMissingError, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
 
@@ -330,7 +330,7 @@ function Withdraw() {
         <label className="block">
           <span className="wallet-amount-label-row">
             <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
-            <span className="wallet-network-badge">BNB Smart Chain (BEP-20)</span>
+            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : "No wallet connected"}</span>
           </span>
           <div className="wallet-amount-field">
             <span className="wallet-amount-prefix">$</span>

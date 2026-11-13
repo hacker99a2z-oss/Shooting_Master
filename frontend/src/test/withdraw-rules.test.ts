@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { HISTORY_LIMIT, coinsForWithdrawUsd, isPendingWithdrawal } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
+import { shortenWalletAddress } from "@/lib/wallet-rules";
 
 describe("withdraw rules", () => {
   it("minimum withdrawal is $0.02", () => expect(MIN_WITHDRAW_USD).toBe(0.02));
@@ -28,4 +29,12 @@ describe("coins shown under the amount", () => {
   it("$1 needs 100,000 coins", () => expect(coinsForWithdrawUsd(1)).toBe(100000));
   it("$0.05 needs 5,000 coins", () => expect(coinsForWithdrawUsd(0.05)).toBe(5000));
   it("an empty amount needs 0 coins", () => expect(coinsForWithdrawUsd(Number(""))).toBe(0));
+});
+
+describe("wallet address shown beside the amount", () => {
+  it("keeps the first 6 and last 4 characters with dots between them", () => {
+    expect(shortenWalletAddress("0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a01")).toBe("0x1a2b...9a01");
+  });
+  it("leaves a short value untouched", () => expect(shortenWalletAddress("0x1a2b3c")).toBe("0x1a2b3c"));
+  it("has nothing to show before a wallet is connected", () => expect(shortenWalletAddress("")).toBe(""));
 });
