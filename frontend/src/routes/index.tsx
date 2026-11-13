@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { Gamepad2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
@@ -61,10 +61,10 @@ function Home() {
             </span>
           </p>
         </div>
-        <button type="button" className="arena-play-button">
+        <Link to="/play" className="arena-play-button">
           <Play className="h-5 w-5" fill="currentColor" />
           <span>Play</span>
-        </button>
+        </Link>
       </section>
 
       <div className="home-stats-row">

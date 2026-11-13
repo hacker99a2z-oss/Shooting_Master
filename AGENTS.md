@@ -16,3 +16,4 @@
 - Homepage shows the profile card, a Battle Arena preview card and games/daily-games stats; the daily target, claim reward and coins-per-enemy live in lib/home-rules.ts so they stay unit-tested.
 - Wallet page keeps balance, Trust Wallet connect and withdraw in one card; phones connect through the Trust Wallet app, PCs through the Trust Wallet extension, and the wallet address is never displayed.
 - Each paid automatic payout is announced once to the payout channel (PAYOUT_CHANNEL_ID, else the public OFFICIAL_CHANNEL_URL) and the history "View" button opens that post.
+- Battle Arena (/play, opened by the homepage Play button) renders the cleaned arena picture (assets/arena-world.jpg) projected onto simple 3D surfaces with react-three-fiber; pan limits and camera slide live in lib/arena-world.ts as pure functions so the picture's left/right ends stay unit-tested.

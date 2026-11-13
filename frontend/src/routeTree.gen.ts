@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as PlayRouteImport } from './routes/play'
 import { Route as ReferRouteImport } from './routes/refer'
 import { Route as WithdrawRouteImport } from './routes/withdraw'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReferRoute = ReferRouteImport.update({
@@ -38,12 +44,14 @@ const WithdrawRoute = WithdrawRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/leaderboard' | '/refer' | '/withdraw'
+  fullPaths: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard' | '/refer' | '/withdraw'
-  id: '__root__' | '/' | '/leaderboard' | '/refer' | '/withdraw'
+  to: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
+  id: '__root__' | '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  PlayRoute: typeof PlayRoute
   ReferRoute: typeof ReferRoute
   WithdrawRoute: typeof WithdrawRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/leaderboard'
       fullPath: '/leaderboard'
       preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/refer': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LeaderboardRoute: LeaderboardRoute,
+  PlayRoute: PlayRoute,
   ReferRoute: ReferRoute,
   WithdrawRoute: WithdrawRoute,
 }

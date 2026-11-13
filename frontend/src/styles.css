@@ -1042,3 +1042,20 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 }
 .home-claim-button:active:not(:disabled) { transform: translateY(2px); }
 .home-claim-button:disabled { cursor: not-allowed; filter: saturate(.45); opacity: .7; }
+
+/* Battle Arena game screen: full-height 3D world with the round's coins at the top right. */
+.arena-game {
+  position: fixed; inset: 0; z-index: 50; margin: 0 auto; max-width: 28rem; overflow: hidden;
+  background: var(--background); touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.arena-world { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+.arena-world:active { cursor: grabbing; }
+.arena-game-coins {
+  position: absolute; top: calc(.75rem + env(safe-area-inset-top)); right: .75rem; z-index: 2;
+  display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .8rem .35rem .45rem;
+  border: 2px solid color-mix(in oklab, var(--gold) 65%, transparent); border-radius: 999px;
+  background: color-mix(in oklab, var(--background) 72%, transparent); backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px -4px color-mix(in oklab, var(--background) 80%, black);
+  font-family: var(--font-display); font-size: 1.2rem; line-height: 1; font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
