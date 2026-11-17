@@ -22,9 +22,9 @@ function jpegSize(buffer: Buffer): [number, number] {
 describe("Battle Arena artwork", () => {
   const artwork = readFileSync(path.join(process.cwd(), "src/assets/battle-arena.jpg"));
 
-  // The generated picture came with a black strip along its bottom and right edge;
-  // those rows/columns are cropped off so the card never shows a black band under the art.
-  it("is cropped to the clean artwork area, with no black edge strips", () => {
+  // The card picture is a real Battle Arena frame (hero, skeleton enemies, map props),
+  // sized to the card so it fills it without stretching.
+  it("matches the 1233×607 card frame", () => {
     expect(jpegSize(artwork)).toEqual([1233, 607]);
   });
 });

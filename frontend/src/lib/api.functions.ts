@@ -18,9 +18,6 @@ export type AdPlayStatus = Player & {verified:boolean; rewardPending:boolean; ex
 export const grantAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/complete",data);
 export const getAdPlayStatus=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/status",data);
 export const cancelAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus & {cancelled?:boolean}>("ad/cancel",data,true);
-export const claimDailyEnergy=(data:Auth)=>post<Player & {bonusEnergy:number}>("energy/daily",data);
-export const giveMinerEnergy=(data:Auth)=>post<Player>("mine/give",data);
-export const claimMinedGold=(data:Auth)=>post<Player & {claimedGold:number}>("mine/claim",data);
 export const claimDailyBonus=(data:Auth)=>post<Player & {bonus:number}>("bonus/claim",data);
 export type LeaderboardRow={rank:number;tgId:number;name:string;username:string|null;coins:number;prize:number;isMe:boolean};
 export const getLeaderboard=(data:Auth)=>post<{list:LeaderboardRow[];seasonEndsAt:number}>("leaderboard",data);

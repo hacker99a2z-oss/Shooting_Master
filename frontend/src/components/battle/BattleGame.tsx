@@ -4,20 +4,16 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Link } from "@tanstack/react-router";
 import { Home, RotateCcw, Skull } from "lucide-react";
-import { HERO_MAX_HP, createBattle, emptyInput, stepBattle, type Battle, type EnemyKind, type ShotKind } from "@/lib/battle-rules";
+import { HERO_MAX_HP, createBattle, emptyInput, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
 import { CAMERA_PITCH, cameraDistance, cameraFocusLimit } from "@/lib/battle-camera";
 import { BattleGround, BattleWorld } from "./BattleWorld";
 import { BattleControls, createControls, type ControlState } from "./BattleControls";
-import { CHARACTER_FILES, MODEL, configureLoader } from "./models";
+import { CHARACTER_URLS, ENEMY_KINDS, WEAPON_FILES, WEAPON_URLS, configureLoader } from "./models";
 import { EnemyView, Effects, HeroView, ProjectileView } from "./views";
 
-const ENEMY_KINDS: EnemyKind[] = ["archer", "axeman", "warrior", "minion"];
 const POOL_PER_KIND = 6;
 const SHOT_POOL = 14;
 const ARROW_POOL = 14;
-const CHAR_URLS = [CHARACTER_FILES.hero, ...ENEMY_KINDS.map((k) => CHARACTER_FILES[k])].map(MODEL);
-const WEAPON_FILES = ["shield", "arrow", "axe", "crossbow", "blade"] as const;
-const WEAPON_URLS = WEAPON_FILES.map(MODEL);
 
 export type HudState = { hp: number; kills: number; coins: number; shield: boolean; over: boolean };
 
@@ -97,7 +93,7 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const size = useThree((s) => s.size);
   const scene = useThree((s) => s.scene);
-  const chars = useLoader(GLTFLoader, CHAR_URLS, configureLoader) as GLTF[];
+  const chars = useLoader(GLTFLoader, CHARACTER_URLS, configureLoader) as GLTF[];
   const weaponList = useLoader(GLTFLoader, WEAPON_URLS, configureLoader) as GLTF[];
   const sun = useRef<THREE.DirectionalLight>(null);
 
@@ -316,16 +312,16 @@ function Match({ seed, onRestart }: { seed: number; onRestart: () => void }) {
   return (
     <div ref={wrapperRef} className="battle-world" aria-label="Battle Arena map">
       <Canvas shadows dpr={[1, 2]} camera={{ fov: 42, near: 0.5, far: 220, position: [0, 30, 30] }} gl={{ antialias: true }}>
-        <color attach="background" args={["#4f7a35"]} />
-        <fog attach="fog" args={["#9cc6a0", 45, 95]} />
         <hemisphereLight args={["#d8efff", "#4d6b2a", 1.1]} />
         <ambientLight intensity={0.25} />
-        <BattleGround seed={seed} />
         <PointerAim controls={controls} />
+        {/* One boundary: the ground, props and characters appear together in the same frame.
+            The home page preloads every model, so this resolves at once after tapping Play. */}
         <Suspense fallback={null}>
+          <color attach="background" args={["#4f7a35"]} />
+          <fog attach="fog" args={["#9cc6a0", 45, 95]} />
+          <BattleGround seed={seed} />
           <BattleWorld props={battle.props} seed={seed} />
-        </Suspense>
-        <Suspense fallback={null}>
           <GameLoop battle={battle} controls={controls} onHud={setHud} onReady={markReady} />
         </Suspense>
       </Canvas>

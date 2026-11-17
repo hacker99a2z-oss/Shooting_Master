@@ -1,8 +1,10 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Gamepad2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { preloadBattle } from "@/components/battle/preload";
 import { usePlayer } from "@/hooks/use-player";
-import { COINS_PER_ENEMY, DAILY_GAMES_REWARD_USD, dailyGamesProgress } from "@/lib/home-rules";
+import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 import battleArena from "@/assets/battle-arena.jpg";
 
 export const Route = createFileRoute("/")({
@@ -22,7 +24,10 @@ export const Route = createFileRoute("/")({
 function Home() {
   const { data: me, error } = usePlayer();
   const initial = (me?.name || "?").charAt(0).toUpperCase();
-  const daily = dailyGamesProgress(me?.dailyGames ?? 0);
+  const goals = DAILY_GAME_GOALS.map((g) => ({ ...dailyGamesProgress(me?.dailyGames ?? 0, g.target), rewardUsd: g.rewardUsd }));
+
+  // Load the Battle Arena models now so the map is ready the moment Play is tapped.
+  useEffect(() => preloadBattle(), []);
 
   return (
     <AppShell>
@@ -50,7 +55,7 @@ function Home() {
       <h2 className="home-section-title">Battle Arena</h2>
 
       <section className="arena-card" aria-label="Battle Arena">
-        <img src={battleArena} alt="Battle Arena: hero aiming at red enemy soldiers" className="arena-card-image" />
+        <img src={battleArena} alt="Battle Arena: the hooded archer facing skeleton enemies on the 3D map" className="arena-card-image" />
         <div className="arena-card-shade" aria-hidden="true" />
         <div className="arena-card-copy">
           <p className="arena-card-heading">Kill all the enemies</p>
@@ -76,27 +81,29 @@ function Home() {
           <p className="home-games-count">{me ? me.gamesPlayed.toLocaleString() : "…"}</p>
         </section>
 
-        <section className="home-stat-card home-daily-card" aria-label="Daily Games">
-          <p className="home-stat-title">Daily Games</p>
-          <div className="home-daily-progress">
-            <div
-              className="home-daily-track"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={daily.target}
-              aria-valuenow={daily.played}
-              aria-label="Daily games progress"
-            >
-              <span style={{ width: `${daily.percent}%` }} />
+        {goals.map((goal) => (
+          <section key={goal.target} className="home-stat-card home-daily-card" aria-label={`Daily Games: ${goal.target} games`}>
+            <p className="home-stat-title">Daily Games</p>
+            <div className="home-daily-progress">
+              <div
+                className="home-daily-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={goal.target}
+                aria-valuenow={goal.played}
+                aria-label={`Daily games progress toward ${goal.target}`}
+              >
+                <span style={{ width: `${goal.percent}%` }} />
+              </div>
+              <span className="home-daily-count">
+                {goal.played}/{goal.target}
+              </span>
             </div>
-            <span className="home-daily-count">
-              {daily.played}/{daily.target}
-            </span>
-          </div>
-          <button type="button" className="home-claim-button" disabled={!daily.canClaim}>
-            Claim {DAILY_GAMES_REWARD_USD} $
-          </button>
-        </section>
+            <button type="button" className="home-claim-button" disabled={!goal.canClaim}>
+              Claim {goal.rewardUsd} $
+            </button>
+          </section>
+        ))}
       </div>
 
       <h2 className="home-section-title">How To Play</h2>

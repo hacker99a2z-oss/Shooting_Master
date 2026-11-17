@@ -1,6 +1,6 @@
 # Shooting Master
 
-Telegram Mini App with a React/Vite frontend, animated archery game, Turso database, Telegram authentication, AdsGram reward verification, leaderboard, and optional USDT BEP-20 payouts.
+Telegram Mini App with a React/Vite frontend, 3D Battle Arena game, Turso database, Telegram authentication, AdsGram reward verification, leaderboard, and optional USDT BEP-20 payouts.
 
 ## Target deployment
 
@@ -74,7 +74,7 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 
 - Withdrawals atomically reserve coins. When explicitly enabled and fully configured, eligible USDT BEP-20 withdrawals are signed by the backend treasury and sent through the Cloudflare Queue; otherwise requests remain in manual review. Automatic payouts are off by default and require the secrets and activation steps below.
 - AdsGram rewards are credited only after the protected server-to-server Reward URL callback consumes a pending one-time session. AdsGram's documented callback has no signature or unique event ID, so the shared-secret URL is not a cryptographically signed receipt.
-- The archery game is client-rendered. Server-issued one-time sessions, target limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
+- The Battle Arena game is client-rendered. Server-issued one-time sessions, target limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
 - The leaderboard shows up to 50 players who played at least 1 game this season; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
 - 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
 - Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.

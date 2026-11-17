@@ -48,6 +48,16 @@ export const PROP_FILES = [
 ] as const;
 export type PropFile = (typeof PROP_FILES)[number];
 
+/** Enemy kinds in the order their models are loaded (after the hero). */
+export const ENEMY_KINDS = ["archer", "axeman", "warrior", "minion"] as const;
+export const WEAPON_FILES = ["shield", "arrow", "axe", "crossbow", "blade"] as const;
+
+// One URL list per model group. The game and the home-page preload must use these exact
+// lists so the preloaded models are the ones the game reads from the loader cache.
+export const CHARACTER_URLS = [CHARACTER_FILES.hero, ...ENEMY_KINDS.map((k) => CHARACTER_FILES[k])].map(MODEL);
+export const WEAPON_URLS = WEAPON_FILES.map(MODEL);
+export const PROP_URLS = PROP_FILES.map(MODEL);
+
 export function configureLoader(loader: GLTFLoader) {
   loader.setMeshoptDecoder(MeshoptDecoder);
 }

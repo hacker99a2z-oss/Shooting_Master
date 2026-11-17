@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MAP_HALF, type Prop } from "@/lib/battle-rules";
-import { MODEL, PROP_FILES, configureLoader, type PropFile } from "./models";
+import { PROP_FILES, PROP_URLS, configureLoader, type PropFile } from "./models";
 
 /** Kenney kit models are tiny; this brings them to metres. */
 const K = 3.2;
@@ -29,7 +29,7 @@ function normalizedParts(gltf: GLTF): Part[] {
 }
 
 function usePropModels() {
-  const gltfs = useLoader(GLTFLoader, PROP_FILES.map(MODEL), configureLoader) as GLTF[];
+  const gltfs = useLoader(GLTFLoader, PROP_URLS, configureLoader) as GLTF[];
   return useMemo(() => {
     const map = {} as Record<PropFile, Part[]>;
     PROP_FILES.forEach((f, i) => (map[f] = normalizedParts(gltfs[i]!)));
@@ -382,7 +382,7 @@ export function BattleWorld({ props, seed }: { props: Prop[]; seed: number }) {
   );
 }
 
-/** Grass everywhere, with dirt roads and the central clearing painted on top. Renders before models load. */
+/** Grass everywhere, with dirt roads and the central clearing painted on top. */
 export function BattleGround({ seed }: { seed: number }) {
   const { grass, paths } = useMemo(() => {
     const grass = grassTexture();
