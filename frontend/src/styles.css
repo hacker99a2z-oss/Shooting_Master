@@ -1043,68 +1043,106 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 .home-claim-button:active:not(:disabled) { transform: translateY(2px); }
 .home-claim-button:disabled { cursor: not-allowed; filter: saturate(.45); opacity: .7; }
 
-/* Battle Arena game screen: full-height 3D world with the round's coins at the top right. */
+/* Battle Arena game screen: full-height top-down 3D map. */
 .arena-game {
   position: fixed; inset: 0; z-index: 50; margin: 0 auto; max-width: 28rem; overflow: hidden;
   background: var(--background); touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.arena-world { position: absolute; inset: 0; touch-action: none; }
-.arena-game-coins {
-  position: absolute; top: calc(.75rem + env(safe-area-inset-top)); right: .75rem; z-index: 2;
-  display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .8rem .35rem .45rem;
-  border: 2px solid color-mix(in oklab, var(--gold) 65%, transparent); border-radius: 999px;
-  background: color-mix(in oklab, var(--background) 72%, transparent); backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px -4px color-mix(in oklab, var(--background) 80%, black);
-  font-family: var(--font-display); font-size: 1.2rem; line-height: 1; font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
+.battle-world { position: absolute; inset: 0; touch-action: none; }
+.battle-world canvas { touch-action: none; }
 
-/* Battle Arena controls: joystick bottom-left, Shield and Shoot bottom-right (thumb sized). */
-.arena-controls { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.arena-joystick {
-  position: absolute; left: 1rem; bottom: calc(1.6rem + env(safe-area-inset-bottom));
-  width: 8.25rem; height: 8.25rem; border-radius: 999px; pointer-events: auto; touch-action: none;
-  display: grid; place-items: center;
-  background: radial-gradient(circle, color-mix(in oklab, var(--background) 35%, transparent) 55%, color-mix(in oklab, var(--background) 60%, transparent));
-  border: 3px solid color-mix(in oklab, var(--foreground) 55%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--hud-blue) 40%, transparent), inset 0 0 18px color-mix(in oklab, var(--hud-blue) 30%, transparent);
-  backdrop-filter: blur(2px);
+/* HUD: health bar top-left, kills and coins top-right. */
+.battle-hud {
+  position: absolute; inset: calc(.7rem + env(safe-area-inset-top)) .7rem auto .7rem; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem; pointer-events: none;
 }
-.arena-joystick[data-active] { border-color: color-mix(in oklab, var(--hud-blue) 85%, transparent); }
-.arena-joystick-knob {
-  width: 3.6rem; height: 3.6rem; border-radius: 999px; pointer-events: none;
+.battle-hp {
+  position: relative; flex: 1 1 auto; max-width: 11rem; height: 1.35rem; overflow: hidden;
+  border-radius: 999px; border: 2px solid color-mix(in oklab, white 70%, transparent);
+  background: color-mix(in oklab, var(--hazard-ink) 70%, transparent);
+  box-shadow: 0 4px 14px -4px color-mix(in oklab, var(--hazard-ink) 80%, black);
+}
+.battle-hp-fill {
+  position: absolute; inset: 0 auto 0 0; border-radius: inherit; transition: width .2s ease;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--success) 70%, white), var(--success) 55%, color-mix(in oklab, var(--success) 60%, black));
+}
+.battle-hp-fill[data-low] { background: linear-gradient(180deg, color-mix(in oklab, var(--destructive) 70%, white), var(--destructive)); }
+.battle-hp-text {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: var(--font-display); font-size: .85rem; color: var(--foreground);
+  text-shadow: 0 1px 2px var(--hazard-ink);
+}
+.battle-score { display: flex; gap: .4rem; }
+.battle-kills, .battle-coins {
+  display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .7rem .3rem .45rem;
+  border-radius: 999px; backdrop-filter: blur(6px);
+  background: color-mix(in oklab, var(--background) 72%, transparent);
+  font-family: var(--font-display); font-size: 1.05rem; line-height: 1; font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.battle-kills { border: 2px solid color-mix(in oklab, var(--destructive) 70%, transparent); }
+.battle-coins { border: 2px solid color-mix(in oklab, var(--gold) 65%, transparent); }
+
+/* Controls: joystick bottom-left, Shield toggle bottom-right (thumb sized). */
+.battle-controls { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.battle-joystick {
+  position: absolute; left: 1rem; bottom: calc(1.4rem + env(safe-area-inset-bottom));
+  width: 8rem; height: 8rem; border-radius: 999px; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center;
+  background: radial-gradient(circle, color-mix(in oklab, var(--background) 25%, transparent) 55%, color-mix(in oklab, var(--background) 55%, transparent));
+  border: 3px solid color-mix(in oklab, white 55%, transparent);
+  box-shadow: inset 0 0 18px color-mix(in oklab, var(--hud-blue) 30%, transparent);
+}
+.battle-joystick[data-active] { border-color: color-mix(in oklab, var(--hud-blue) 85%, transparent); }
+.battle-joystick-knob {
+  width: 3.4rem; height: 3.4rem; border-radius: 999px; pointer-events: none;
   background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--hud-blue) 55%, white), var(--hud-blue) 55%, color-mix(in oklab, var(--hud-blue) 60%, black));
   border: 3px solid color-mix(in oklab, white 80%, transparent);
   box-shadow: 0 0 16px color-mix(in oklab, var(--hud-blue) 75%, transparent);
-  transition: transform .06s linear;
 }
-.arena-joystick-arrow {
-  position: absolute; width: 0; height: 0; pointer-events: none;
-  border: 7px solid transparent; opacity: .85;
+.battle-hint {
+  position: absolute; left: 50%; top: calc(3.2rem + env(safe-area-inset-top)); transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap;
+  padding: .25rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600;
+  color: var(--foreground); background: color-mix(in oklab, var(--background) 60%, transparent);
+  animation: battle-hint-out 1s ease 6s forwards;
 }
-.arena-joystick-arrow-up { top: .45rem; border-bottom: 9px solid var(--foreground); border-top-width: 0; }
-.arena-joystick-arrow-down { bottom: .45rem; border-top: 9px solid var(--foreground); border-bottom-width: 0; }
-.arena-joystick-arrow-left { left: .45rem; border-right: 9px solid var(--foreground); border-left-width: 0; }
-.arena-joystick-arrow-right { right: .45rem; border-left: 9px solid var(--foreground); border-right-width: 0; }
-
-.arena-shield-button, .arena-shoot-button {
-  position: absolute; border-radius: 999px; pointer-events: auto; touch-action: none;
-  display: grid; place-items: center; -webkit-tap-highlight-color: transparent;
-  transition: transform .08s ease, filter .08s ease;
-}
-.arena-shield-button[data-active], .arena-shoot-button[data-active] { transform: scale(.92); filter: brightness(1.25); }
-.arena-button-icon { width: 55%; height: 55%; }
-.arena-shield-button {
-  right: 6.9rem; bottom: calc(6.6rem + env(safe-area-inset-bottom)); width: 4.6rem; height: 4.6rem;
+@keyframes battle-hint-out { to { opacity: 0; } }
+.battle-shield-button {
+  position: absolute; right: 1.1rem; bottom: calc(2rem + env(safe-area-inset-bottom));
+  width: 5.4rem; height: 5.4rem; border-radius: 999px; pointer-events: auto; touch-action: none;
+  display: grid; place-items: center; align-content: center; gap: .1rem; -webkit-tap-highlight-color: transparent;
   color: var(--foreground);
+  background: radial-gradient(circle at 40% 30%, color-mix(in oklab, var(--hud-blue) 55%, var(--background)), color-mix(in oklab, var(--background) 80%, transparent) 70%);
+  border: 3px solid color-mix(in oklab, var(--hud-blue) 70%, white);
+  box-shadow: 0 0 14px color-mix(in oklab, var(--hud-blue) 55%, transparent);
+  transition: transform .08s ease, box-shadow .15s ease;
+}
+.battle-shield-button:active { transform: scale(.92); }
+.battle-shield-button[data-on] {
   background: radial-gradient(circle at 40% 30%, color-mix(in oklab, var(--hud-blue) 70%, white), var(--hud-blue) 50%, color-mix(in oklab, var(--hud-blue) 45%, black));
-  border: 3px solid color-mix(in oklab, white 75%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklab, var(--hud-blue) 80%, transparent), inset 0 -4px 8px color-mix(in oklab, var(--hud-blue) 40%, black);
+  box-shadow: 0 0 26px var(--hud-blue), inset 0 -4px 8px color-mix(in oklab, var(--hud-blue) 40%, black);
 }
-.arena-shoot-button {
-  right: 1rem; bottom: calc(1.6rem + env(safe-area-inset-bottom)); width: 6.2rem; height: 6.2rem;
-  color: var(--foreground);
-  background: radial-gradient(circle, color-mix(in oklab, var(--hud-orange) 25%, var(--background)) 52%, color-mix(in oklab, var(--hud-orange) 45%, black) 70%);
-  border: 4px solid var(--hud-orange);
-  box-shadow: 0 0 22px color-mix(in oklab, var(--hud-orange) 85%, transparent), inset 0 0 16px color-mix(in oklab, var(--hud-orange) 70%, transparent);
+.battle-shield-icon { width: 2.1rem; height: 2.1rem; }
+.battle-shield-label { font-family: var(--font-display); font-size: .78rem; line-height: 1; letter-spacing: .02em; }
+
+/* Round over. */
+.battle-over {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 1.5rem;
+  background: color-mix(in oklab, var(--hazard-ink) 55%, transparent); backdrop-filter: blur(3px);
+  animation: battle-over-in .35s ease-out;
 }
+.battle-over-card {
+  width: 100%; max-width: 19rem; padding: 1.4rem 1.2rem; border-radius: 1.4rem; text-align: center;
+  background: var(--gradient-sky); box-shadow: var(--shadow-card);
+}
+.battle-over-title { font-family: var(--font-display); font-size: 2.2rem; color: var(--destructive); text-shadow: 0 3px 0 color-mix(in oklab, var(--destructive) 40%, black); }
+.battle-over-stat { margin-top: .5rem; display: flex; align-items: center; justify-content: center; gap: .45rem; font-family: var(--font-display); font-size: 1.15rem; color: var(--foreground); }
+.battle-over-actions { margin-top: 1.2rem; display: grid; gap: .6rem; }
+.battle-over-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem; padding: .75rem 1rem;
+  border-radius: 999px; font-family: var(--font-display); font-size: 1.1rem; color: var(--foreground);
+  background: var(--secondary); border: 2px solid var(--border);
+}
+.battle-over-primary { background: var(--gradient-fire); border-color: color-mix(in oklab, var(--gold) 70%, transparent); box-shadow: var(--shadow-fire); }
+@keyframes battle-over-in { from { opacity: 0; } to { opacity: 1; } }
