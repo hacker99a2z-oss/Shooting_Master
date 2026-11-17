@@ -301,9 +301,12 @@ export class EnemyView {
       this.state = e.state;
     }
     if (e.state === "moving" || e.state === "windup" || e.state === "recover") {
-      const fast = e.speed > ENEMY_SPECS[e.kind].speed * 0.75;
-      const legs = e.speed > 0.3 ? (fast ? "Running_A" : "Walking_A") : "Idle";
-      this.anim.setBase(legs, e.state === "windup" && this.kind === "archer" ? "1H_Ranged_Aiming" : legs);
+      // Enemies always walk (never the run cycle): the run has both feet off the ground each
+      // stride, which looked like a hop every time an enemy stopped to attack and set off again.
+      const moving = e.speed > 0.3;
+      const legs = moving ? "Walking_A" : "Idle";
+      const pace = moving ? Math.max(0.8, Math.min(1.4, e.speed / 3)) : 1;
+      this.anim.setBase(legs, e.state === "windup" && this.kind === "archer" ? "1H_Ranged_Aiming" : legs, pace);
     }
     this.telegraph.visible = e.state === "windup";
     if (this.telegraph.visible) {
