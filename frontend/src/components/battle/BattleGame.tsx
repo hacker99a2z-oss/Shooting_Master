@@ -240,12 +240,12 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
       intensity={2.3}
       color="#fff1d6"
       shadow-mapSize={[1024, 1024]}
-      shadow-camera-left={-24}
-      shadow-camera-right={24}
-      shadow-camera-top={24}
-      shadow-camera-bottom={-24}
+      shadow-camera-left={-32}
+      shadow-camera-right={32}
+      shadow-camera-top={32}
+      shadow-camera-bottom={-32}
       shadow-camera-near={1}
-      shadow-camera-far={70}
+      shadow-camera-far={80}
       shadow-bias={-0.0006}
       shadow-normalBias={0.03}
     />

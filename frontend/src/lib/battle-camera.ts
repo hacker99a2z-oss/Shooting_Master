@@ -7,9 +7,9 @@ import { MAP_HALF } from "@/lib/battle-rules";
 /** Camera tilt above the ground (radians): 52°. */
 export const CAMERA_PITCH = (52 * Math.PI) / 180;
 /** Ground width (metres) visible across the screen on a phone held upright. */
-export const VIEW_WIDTH = 11;
+export const VIEW_WIDTH = 14;
 export const MIN_DISTANCE = 14;
-export const MAX_DISTANCE = 32;
+export const MAX_DISTANCE = 42;
 /** How much of the wooden wall / forest may show past the map edge (metres). */
 export const EDGE_MARGIN = 3;
 

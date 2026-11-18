@@ -607,7 +607,7 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 }
 @keyframes battle-hint-out { to { opacity: 0; } }
 .battle-shield-button {
-  position: absolute; right: 1.1rem; bottom: calc(2rem + env(safe-area-inset-bottom));
+  position: absolute; right: 2.4rem; bottom: calc(3.6rem + env(safe-area-inset-bottom));
   width: 5.4rem; height: 5.4rem; border-radius: 999px; pointer-events: auto; touch-action: none;
   display: grid; place-items: center; align-content: center; gap: .1rem; -webkit-tap-highlight-color: transparent;
   color: var(--foreground);
