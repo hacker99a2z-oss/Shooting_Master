@@ -13,14 +13,87 @@ export type ControlState = {
   /** The press has been seen by at least one frame (so a quick tap still aims, then fires). */
   pressSeen: boolean;
   releaseQueued: boolean;
-  shieldToggleQueued: boolean;
+  /** The shield button is held down (the shield is up only while this is true). */
+  shieldHeld: boolean;
+  /** Unit direction the finger has slid on the shield button (y = screen down), or null to keep facing. */
+  shieldAim: { x: number; y: number } | null;
 };
 
 export function createControls(): ControlState {
-  return { stick: { x: 0, y: 0 }, keys: new Set(), pointerDown: false, pointerId: null, ndcX: 0, ndcY: 0, pressSeen: false, releaseQueued: false, shieldToggleQueued: false };
+  return { stick: { x: 0, y: 0 }, keys: new Set(), pointerDown: false, pointerId: null, ndcX: 0, ndcY: 0, pressSeen: false, releaseQueued: false, shieldHeld: false, shieldAim: null };
 }
 
 const KNOB_TRAVEL = 46;
+/** Pixels the finger must slide on the shield button before it starts turning the shield. */
+const SHIELD_SLIDE_DEAD_ZONE = 12;
+
+/** Direction of a slide on the shield button, or null inside the small dead zone. */
+export function shieldSlideDirection(dx: number, dy: number) {
+  const len = Math.hypot(dx, dy);
+  if (len < SHIELD_SLIDE_DEAD_ZONE) return null;
+  return { x: dx / len, y: dy / len };
+}
+
+/** Hold to raise the shield; slide the same finger left / right (any way) to turn it. */
+function ShieldButton({ controls, shieldOn }: { controls: ControlState; shieldOn: boolean }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let pointer: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    const down = (e: PointerEvent) => {
+      if (pointer !== null) return;
+      pointer = e.pointerId;
+      el.setPointerCapture(e.pointerId);
+      startX = e.clientX;
+      startY = e.clientY;
+      controls.shieldHeld = true;
+      controls.shieldAim = null;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== pointer) return;
+      const dir = shieldSlideDirection(e.clientX - startX, e.clientY - startY);
+      if (dir) controls.shieldAim = dir;
+    };
+    const up = (e: PointerEvent) => {
+      if (e.pointerId !== pointer) return;
+      pointer = null;
+      controls.shieldHeld = false;
+      controls.shieldAim = null;
+    };
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    return () => {
+      el.removeEventListener("pointerdown", down);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      controls.shieldHeld = false;
+      controls.shieldAim = null;
+    };
+  }, [controls]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className="battle-shield-button"
+      data-on={shieldOn ? "true" : undefined}
+      aria-pressed={shieldOn}
+      aria-label="Hold to raise the shield, slide to turn it"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <Shield className="battle-shield-icon" strokeWidth={2.4} />
+      <span className="battle-shield-label">Shield</span>
+    </button>
+  );
+}
 
 /** Joystick vector with a small dead zone, length ≤ 1 (y = screen down). */
 export function joystickVector(dx: number, dy: number, travel: number) {
@@ -86,9 +159,9 @@ function Joystick({ controls }: { controls: ControlState }) {
 }
 
 /**
- * Joystick bottom-left, Shield toggle bottom-right. Touch/click on the map aims
- * the bow (let go to shoot) or turns the raised shield.
- * Keyboard: WASD / arrows move, E / Space / Shift toggles the shield.
+ * Joystick bottom-left, Shield button bottom-right (held = shield up). Touch/click on the
+ * map aims the bow (let go to shoot) or turns the raised shield.
+ * Keyboard: WASD / arrows move, hold E / Space / Shift for the shield.
  */
 export function BattleControls({ controls, shieldOn }: { controls: ControlState; shieldOn: boolean }) {
   useEffect(() => {
@@ -98,7 +171,6 @@ export function BattleControls({ controls, shieldOn }: { controls: ControlState;
       if (moveKeys.includes(e.code) || shieldKeys.includes(e.code)) e.preventDefault();
       if (e.repeat) return;
       controls.keys.add(e.code);
-      if (shieldKeys.includes(e.code)) controls.shieldToggleQueued = true;
     };
     const onUp = (e: KeyboardEvent) => controls.keys.delete(e.code);
     const clear = () => controls.keys.clear();
@@ -117,24 +189,9 @@ export function BattleControls({ controls, shieldOn }: { controls: ControlState;
       <Joystick controls={controls} />
       <p className="battle-hint" aria-hidden="true">
         <Target className="h-3.5 w-3.5" />
-        {shieldOn ? "Drag on the map to turn your shield" : "Touch the map to aim, let go to shoot"}
+        {shieldOn ? "Slide left or right to turn your shield" : "Touch the map to aim, let go to shoot"}
       </p>
-      <button
-        type="button"
-        className="battle-shield-button"
-        data-on={shieldOn ? "true" : undefined}
-        aria-pressed={shieldOn}
-        aria-label={shieldOn ? "Put the shield away and take the bow" : "Raise the shield"}
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          controls.shieldToggleQueued = true;
-        }}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        <Shield className="battle-shield-icon" strokeWidth={2.4} />
-        <span className="battle-shield-label">{shieldOn ? "Bow" : "Shield"}</span>
-      </button>
+      <ShieldButton controls={controls} shieldOn={shieldOn} />
     </div>
   );
 }

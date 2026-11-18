@@ -1,6 +1,6 @@
 /**
  * Battle Arena rules: top-down MOBA-style map, hero walking, bow aiming and
- * unlimited arrows, the shield, random enemies that throw arrows/axes/blades/rocks,
+ * unlimited arrows, the hold-to-raise shield, random enemies that throw arrows/axes/blades/rocks,
  * and the random props (haystacks, broken carts, barrels...) laid out per match.
  * Plain TypeScript (no React, no three.js) so every rule stays unit-tested.
  *
@@ -19,7 +19,8 @@ export const SPAWN_CLEAR_RADIUS = 7;
 
 // ---------- Hero ----------
 export const HERO_RADIUS = 0.5;
-export const HERO_MAX_HP = 100;
+/** One hit kills: the hero and every enemy have a single life. */
+export const HERO_MAX_HP = 1;
 export const HERO_RUN_SPEED = 6;
 export const HERO_AIM_SPEED = 3;
 export const HERO_SHIELD_SPEED = 2.6;
@@ -27,16 +28,14 @@ export const HERO_SHIELD_SPEED = 2.6;
 export const HERO_TURN_RATE = 14;
 /** Seconds between two arrows; arrows themselves are unlimited. */
 export const FIRE_COOLDOWN = 0.22;
-/** Health regained per second once the hero has not been hit for REGEN_DELAY. */
-export const REGEN_PER_SECOND = 3;
-export const REGEN_DELAY = 4;
 /** Half angle (radians) of the cone in front of the shield that blocks shots. */
 export const SHIELD_BLOCK_HALF_ANGLE = (75 * Math.PI) / 180;
 
 // ---------- Hero arrows ----------
 export const ARROW_SPEED = 30;
 export const ARROW_RANGE = 22;
-export const ARROW_DAMAGE = 50;
+/** Every hero arrow that lands kills the enemy it hits. */
+export const ARROW_DAMAGE = 1;
 /** Height the arrows fly at. */
 export const ARROW_HEIGHT = 1.2;
 
@@ -61,10 +60,10 @@ export type EnemySpec = {
 };
 
 export const ENEMY_SPECS: Record<EnemyKind, EnemySpec> = {
-  archer: { hp: 100, speed: 2.8, radius: 0.5, minRange: 10, maxRange: 15, windup: 0.75, cooldown: [2.2, 3.4], shot: "arrow", shotSpeed: 15, damage: 10, weight: 3 },
-  axeman: { hp: 150, speed: 3.1, radius: 0.6, minRange: 6, maxRange: 10, windup: 0.6, cooldown: [2.2, 3.2], shot: "axe", shotSpeed: 11, damage: 16, weight: 2 },
-  warrior: { hp: 120, speed: 3, radius: 0.55, minRange: 7, maxRange: 11, windup: 0.6, cooldown: [2.4, 3.4], shot: "blade", shotSpeed: 12, damage: 13, weight: 2 },
-  minion: { hp: 50, speed: 3.8, radius: 0.45, minRange: 5, maxRange: 9, windup: 0.55, cooldown: [1.8, 2.8], shot: "rock", shotSpeed: 10, damage: 8, weight: 3 },
+  archer: { hp: 1, speed: 2.8, radius: 0.5, minRange: 10, maxRange: 15, windup: 0.75, cooldown: [2.2, 3.4], shot: "arrow", shotSpeed: 15, damage: 1, weight: 3 },
+  axeman: { hp: 1, speed: 3.1, radius: 0.6, minRange: 6, maxRange: 10, windup: 0.6, cooldown: [2.2, 3.2], shot: "axe", shotSpeed: 11, damage: 1, weight: 2 },
+  warrior: { hp: 1, speed: 3, radius: 0.55, minRange: 7, maxRange: 11, windup: 0.6, cooldown: [2.4, 3.4], shot: "blade", shotSpeed: 12, damage: 1, weight: 2 },
+  minion: { hp: 1, speed: 3.8, radius: 0.45, minRange: 5, maxRange: 9, windup: 0.55, cooldown: [1.8, 2.8], shot: "rock", shotSpeed: 10, damage: 1, weight: 3 },
 };
 
 export const SHOT_RANGE = 24;
@@ -215,12 +214,15 @@ export type BattleInput = {
   pointerZ: number;
   /** The finger / mouse was let go this frame: the bow fires. */
   released: boolean;
-  /** The shield button was pressed this frame: switches bow ↔ shield. */
-  toggleShield: boolean;
+  /** The shield button is being held: the shield is up only while this is true. */
+  shieldHeld: boolean;
+  /** Direction the finger on the shield button slides (screen right = +x, down = +z); 0,0 = keep facing. */
+  shieldDirX: number;
+  shieldDirZ: number;
 };
 
 export function emptyInput(): BattleInput {
-  return { moveX: 0, moveZ: 0, pointerHeld: false, pointerX: 0, pointerZ: 0, released: false, toggleShield: false };
+  return { moveX: 0, moveZ: 0, pointerHeld: false, pointerX: 0, pointerZ: 0, released: false, shieldHeld: false, shieldDirX: 0, shieldDirZ: 0 };
 }
 
 // ---------- Helpers ----------
@@ -364,15 +366,18 @@ function stepHero(b: Battle, input: BattleInput, dt: number) {
     h.vx = h.vz = 0;
     return;
   }
-  if (input.toggleShield) {
-    h.mode = h.mode === "bow" ? "shield" : "bow";
-    h.aiming = false;
-  }
+  // The shield is up only while its button is held; letting go brings the bow back.
+  h.mode = input.shieldHeld ? "shield" : "bow";
+  if (h.mode === "shield") h.aiming = false;
   h.fireCooldown = Math.max(0, h.fireCooldown - dt);
   h.sinceHit += dt;
-  if (h.sinceHit > REGEN_DELAY) h.hp = Math.min(HERO_MAX_HP, h.hp + REGEN_PER_SECOND * dt);
 
-  if (input.pointerHeld || input.released) {
+  const shieldSlide = h.mode === "shield" && Math.hypot(input.shieldDirX, input.shieldDirZ) > 0.01;
+  if (shieldSlide) {
+    // Sliding the finger on the shield button turns the shield that way (left → left, right → right).
+    h.aimX = h.x + input.shieldDirX * 5;
+    h.aimZ = h.z + input.shieldDirZ * 5;
+  } else if (input.pointerHeld || input.released) {
     h.aimX = input.pointerX;
     h.aimZ = input.pointerZ;
   }
@@ -397,7 +402,7 @@ function stepHero(b: Battle, input: BattleInput, dt: number) {
   h.z = p.z;
 
   // Face: toward the aim point while aiming / turning the shield, else along the walk.
-  if (h.aiming || (h.mode === "shield" && input.pointerHeld)) {
+  if (h.aiming || (h.mode === "shield" && (input.pointerHeld || shieldSlide))) {
     const d = aimDirection(h);
     h.yaw = turnToward(h.yaw, yawTo(d.x, d.z), HERO_TURN_RATE * 1.6, dt);
   } else if (len > 0.05) {
@@ -411,7 +416,8 @@ function stepHero(b: Battle, input: BattleInput, dt: number) {
 function damageHero(b: Battle, dmg: number) {
   const h = b.hero;
   if (h.dead) return;
-  h.hp = Math.max(0, h.hp - dmg);
+  // One hit kills (every shot does at least the hero's whole single life).
+  h.hp = Math.max(0, h.hp - Math.max(dmg, h.hp));
   h.sinceHit = 0;
   b.events.push({ type: "heroHit", damage: dmg });
   if (h.hp <= 0) {
@@ -432,7 +438,8 @@ export function shieldBlocks(hero: Hero, shotX: number, shotZ: number) {
 // ---------- Arrows ----------
 function damageEnemy(b: Battle, e: Enemy, dmg: number) {
   if (e.state === "dead") return;
-  e.hp -= dmg;
+  // One hit kills (an arrow takes the enemy's whole single life).
+  e.hp -= Math.max(dmg, e.hp);
   if (e.hp <= 0) {
     e.hp = 0;
     e.state = "dead";

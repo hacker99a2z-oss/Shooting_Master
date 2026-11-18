@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Link } from "@tanstack/react-router";
 import { Home, RotateCcw, Skull } from "lucide-react";
-import { HERO_MAX_HP, createBattle, emptyInput, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
+import { createBattle, emptyInput, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
 import { CAMERA_PITCH, cameraDistance, cameraFocusLimit } from "@/lib/battle-camera";
 import { BattleGround, BattleWorld } from "./BattleWorld";
 import { BattleControls, createControls, type ControlState } from "./BattleControls";
@@ -15,7 +15,7 @@ const POOL_PER_KIND = 6;
 const SHOT_POOL = 14;
 const ARROW_POOL = 14;
 
-export type HudState = { hp: number; kills: number; coins: number; shield: boolean; over: boolean };
+export type HudState = { kills: number; coins: number; shield: boolean; over: boolean };
 
 /** Builds this frame's rules input from the raw controls (pointer ray-cast onto the ground). */
 function readInput(c: ControlState, camera: THREE.Camera, ray: THREE.Raycaster, plane: THREE.Plane, hit: THREE.Vector3, ndc: THREE.Vector2) {
@@ -36,8 +36,11 @@ function readInput(c: ControlState, camera: THREE.Camera, ray: THREE.Raycaster, 
   input.released = released;
   if (held) c.pressSeen = true;
   if (released) c.releaseQueued = false;
-  input.toggleShield = c.shieldToggleQueued;
-  c.shieldToggleQueued = false;
+  input.shieldHeld = c.shieldHeld || c.keys.has("KeyE") || c.keys.has("Space") || c.keys.has("ShiftLeft") || c.keys.has("KeyK");
+  if (c.shieldAim) {
+    input.shieldDirX = c.shieldAim.x;
+    input.shieldDirZ = c.shieldAim.y;
+  }
   return input;
 }
 
@@ -220,7 +223,7 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     tools.hudTimer -= dt;
     if (tools.hudTimer <= 0) {
       tools.hudTimer = 0.1;
-      const hud: HudState = { hp: Math.ceil(h.hp), kills: battle.kills, coins: battle.coins, shield: h.mode === "shield", over: battle.over };
+      const hud: HudState = { kills: battle.kills, coins: battle.coins, shield: h.mode === "shield", over: battle.over };
       const key = JSON.stringify(hud);
       if (key !== lastHud.current) {
         lastHud.current = key;
@@ -249,24 +252,18 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
   );
 }
 
+/** Kills top-left, coins top-right. No health bar: one hit kills. */
 function Hud({ hud }: { hud: HudState }) {
-  const pct = (hud.hp / HERO_MAX_HP) * 100;
   return (
     <div className="battle-hud">
-      <div className="battle-hp" aria-label={`Health ${hud.hp} of ${HERO_MAX_HP}`}>
-        <span className="battle-hp-fill" style={{ width: `${pct}%` }} data-low={pct < 30 ? "true" : undefined} />
-        <span className="battle-hp-text">{hud.hp}</span>
-      </div>
-      <div className="battle-score">
-        <span className="battle-kills" aria-label="Enemies killed">
-          <Skull className="h-4 w-4" />
-          {hud.kills}
-        </span>
-        <span className="battle-coins" aria-label="Coins earned this round">
-          <span className="coin-dot" />
-          <span className="text-gold-gradient">{hud.coins.toLocaleString()}</span>
-        </span>
-      </div>
+      <span className="battle-kills" aria-label="Enemies killed">
+        <Skull className="h-4 w-4" />
+        {hud.kills}
+      </span>
+      <span className="battle-coins" aria-label="Coins earned this round">
+        <span className="coin-dot" />
+        <span className="text-gold-gradient">{hud.coins.toLocaleString()}</span>
+      </span>
     </div>
   );
 }
@@ -299,7 +296,7 @@ function Match({ seed, onRestart }: { seed: number; onRestart: () => void }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const battle = useMemo(() => createBattle(seed), [seed]);
   const controls = useMemo(() => createControls(), []);
-  const [hud, setHud] = useState<HudState>({ hp: HERO_MAX_HP, kills: 0, coins: 0, shield: false, over: false });
+  const [hud, setHud] = useState<HudState>({ kills: 0, coins: 0, shield: false, over: false });
   const [overShown, setOverShown] = useState(false);
   const markReady = useMemo(() => () => wrapperRef.current?.setAttribute("data-scene-ready", "true"), []);
 

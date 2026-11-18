@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ARROW_RANGE,
-  ENEMY_SPECS,
   FIRE_COOLDOWN,
   HERO_SPAWN,
   MAP_HALF,
@@ -25,7 +24,7 @@ function emptyBattle(): Battle {
 }
 
 function run(b: Battle, seconds: number, input = emptyInput()) {
-  for (let t = 0; t < seconds; t += 1 / 60) stepBattle(b, { ...input, toggleShield: false, released: false }, 1 / 60);
+  for (let t = 0; t < seconds; t += 1 / 60) stepBattle(b, { ...input, released: false }, 1 / 60);
 }
 
 /** Hold the finger on (x, z) for a moment, then let go. */
@@ -84,47 +83,84 @@ describe("bow", () => {
   });
 });
 
+const HOLD = { ...emptyInput(), shieldHeld: true };
+
 describe("shield", () => {
-  it("the shield button swaps the bow for the shield and back", () => {
+  it("is up only while the shield button is held", () => {
     const b = emptyBattle();
-    stepBattle(b, { ...emptyInput(), toggleShield: true }, 1 / 60);
+    stepBattle(b, HOLD, 1 / 60);
     expect(b.hero.mode).toBe("shield");
-    stepBattle(b, { ...emptyInput(), toggleShield: true }, 1 / 60);
+    run(b, 1, HOLD);
+    expect(b.hero.mode).toBe("shield");
+    stepBattle(b, emptyInput(), 1 / 60);
     expect(b.hero.mode).toBe("bow");
   });
 
-  it("does not shoot while the shield is raised", () => {
+  it("does not shoot while the shield is held", () => {
     const b = emptyBattle();
-    stepBattle(b, { ...emptyInput(), toggleShield: true }, 1 / 60);
-    aimAndRelease(b, 10, HERO_SPAWN.z);
+    stepBattle(b, { ...HOLD, pointerHeld: true, pointerX: 10, pointerZ: HERO_SPAWN.z }, 1 / 60);
+    stepBattle(b, { ...HOLD, released: true, pointerX: 10, pointerZ: HERO_SPAWN.z }, 1 / 60);
     expect(b.arrows).toHaveLength(0);
   });
 
-  it("dragging on the map turns the raised shield toward the finger", () => {
+  it("sliding the finger right / left on the held button turns the shield right / left", () => {
+    const right = emptyBattle();
+    run(right, 1, { ...HOLD, shieldDirX: 1 });
+    expect(Math.sin(right.hero.yaw)).toBeCloseTo(1, 2);
+    const left = emptyBattle();
+    run(left, 1, { ...HOLD, shieldDirX: -1 });
+    expect(Math.sin(left.hero.yaw)).toBeCloseTo(-1, 2);
+  });
+
+  it("dragging on the map turns the held shield toward the finger", () => {
     const b = emptyBattle();
-    stepBattle(b, { ...emptyInput(), toggleShield: true }, 1 / 60);
-    run(b, 1, { ...emptyInput(), pointerHeld: true, pointerX: HERO_SPAWN.x + 10, pointerZ: HERO_SPAWN.z });
+    run(b, 1, { ...HOLD, pointerHeld: true, pointerX: HERO_SPAWN.x + 10, pointerZ: HERO_SPAWN.z });
     expect(b.hero.yaw).toBeCloseTo(Math.PI / 2, 2);
   });
 
-  it("blocks a shot coming from the front but not from behind", () => {
+  it("blocks a shot coming from the front but one from behind kills the hero", () => {
     const front = emptyBattle();
-    stepBattle(front, { ...emptyInput(), toggleShield: true }, 1 / 60);
-    run(front, 1, { ...emptyInput(), pointerHeld: true, pointerX: 10, pointerZ: HERO_SPAWN.z });
+    run(front, 1, { ...HOLD, shieldDirX: 1 });
     const e = spawnEnemy(front, "axeman", { x: HERO_SPAWN.x + 8, z: HERO_SPAWN.z })!;
     e.state = "windup";
     e.timer = 0;
-    run(front, 2, { ...emptyInput(), pointerHeld: true, pointerX: 10, pointerZ: HERO_SPAWN.z });
-    expect(front.hero.hp).toBe(100);
+    run(front, 2, { ...HOLD, shieldDirX: 1 });
+    expect(front.hero.dead).toBe(false);
 
     const back = emptyBattle();
-    stepBattle(back, { ...emptyInput(), toggleShield: true }, 1 / 60);
-    run(back, 1, { ...emptyInput(), pointerHeld: true, pointerX: -10, pointerZ: HERO_SPAWN.z });
+    run(back, 1, { ...HOLD, shieldDirX: -1 });
     const e2 = spawnEnemy(back, "axeman", { x: HERO_SPAWN.x + 8, z: HERO_SPAWN.z })!;
     e2.state = "windup";
     e2.timer = 0;
-    run(back, 2, { ...emptyInput(), pointerHeld: true, pointerX: -10, pointerZ: HERO_SPAWN.z });
-    expect(back.hero.hp).toBe(100 - ENEMY_SPECS.axeman.damage);
+    run(back, 2, { ...HOLD, shieldDirX: -1 });
+    expect(back.hero.dead).toBe(true);
+  });
+});
+
+describe("one hit kills", () => {
+  it("one enemy shot kills the hero and ends the round", () => {
+    for (const kind of ["archer", "axeman", "warrior", "minion"] as const) {
+      const b = emptyBattle();
+      const e = spawnEnemy(b, kind, { x: HERO_SPAWN.x + 6, z: HERO_SPAWN.z })!;
+      e.state = "windup";
+      e.timer = 0;
+      run(b, 2);
+      expect(b.hero.dead).toBe(true);
+      expect(b.over).toBe(true);
+      expect(b.events.filter((ev) => ev.type === "heroHit")).toHaveLength(1);
+    }
+  });
+
+  it("one arrow kills any enemy", () => {
+    for (const kind of ["archer", "axeman", "warrior", "minion"] as const) {
+      const b = emptyBattle();
+      const e = spawnEnemy(b, kind, { x: HERO_SPAWN.x + 6, z: HERO_SPAWN.z })!;
+      e.state = "moving";
+      e.cooldown = 99;
+      aimAndRelease(b, e.x, e.z);
+      run(b, 0.5);
+      expect(b.kills).toBe(1);
+    }
   });
 });
 

@@ -8,7 +8,6 @@ import {
   ARROW_HEIGHT,
   ARROW_RANGE,
   ENEMY_SPECS,
-  HERO_MAX_HP,
   SHIELD_BLOCK_HALF_ANGLE,
   angleDiff,
   type Enemy,
@@ -209,8 +208,8 @@ export class HeroView {
     this.shieldGuide.visible = h.mode === "shield" && !h.dead;
     this.shieldGuide.rotation.y = h.yaw;
 
-    this.bar.set(h.hp / HERO_MAX_HP, camera);
-    this.bar.group.visible = !h.dead;
+    // No life bar over the hero: one hit kills, so there is nothing to show.
+    this.bar.group.visible = false;
     this.anim.update(dt);
   }
 }
