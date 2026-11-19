@@ -179,6 +179,11 @@ function payoutConfigured(env:Env){
   if(env.PAYOUT_ENABLED!=="true"||!/^0x[0-9a-fA-F]{64}$/.test(env.PAYOUT_PRIVATE_KEY||""))return false;
   try{return new URL(env.BSC_RPC_URL||"").protocol==="https:";}catch{return false;}
 }
+function treasuryWalletAddress(env:Env):string|null{
+  if(!/^0x[0-9a-fA-F]{64}$/.test(env.PAYOUT_PRIVATE_KEY||""))return null;
+  try{return privateKeyToAccount(env.PAYOUT_PRIVATE_KEY as Hex).address;}catch{return null;}
+}
+
 function makePayoutClients(env:Env){
   if(!payoutConfigured(env))throw new PayoutSafetyError("Automatic payout is not configured; request requires manual review.");
   if(!/^0x[0-9a-fA-F]{64}$/.test(env.PAYOUT_PRIVATE_KEY!))throw new PayoutSafetyError("Treasury signing key is invalid.");
@@ -543,6 +548,14 @@ function manualReviewKeyboard(id:string){
 async function sendManualReviewList(env:Env,adminId:number){
   const db=dbFor(env);
   try{
+    const treasury=treasuryWalletAddress(env);
+    if(treasury){
+      await telegramCall(env,"sendMessage",{
+        chat_id:adminId,
+        text:"🏦 <b>PAYOUT TREASURY WALLET</b>\\nNetwork: BNB Smart Chain (BEP-20)\\nWallet: <code>"+escapeHtml(treasury)+"</code>\\nUSDT contract: <code>"+USDT_BEP20_CONTRACT+"</code>\\nDeposit USDT as BEP-20 and keep BNB in this same wallet for gas.",
+        parse_mode:"HTML",disable_web_page_preview:true
+      });
+    }
     const result=await db.execute({
       sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,payout_error,payout_tx_hash,payout_raw_tx FROM withdrawals WHERE status IN ('pending_review','payout_failed_review') ORDER BY created_at ASC LIMIT 20"
     });
