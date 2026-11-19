@@ -163,7 +163,7 @@ async function handle(request, response) {
     // Keep the liveness probe entirely inside the Node HTTP server. It must not
     // depend on the Worker adapter, Turso, or any third-party service.
     const requestUrl = new URL(request.url || "/", "http://" + (request.headers.host || "localhost"));
-    const path = requestUrl.pathname.replace(/\\/+$/, "") || "/";
+    const path = requestUrl.pathname.replace(/\/+$/, "") || "/";
     if (path === "/health" && (request.method === "GET" || request.method === "HEAD")) {
       const origin = request.headers.origin;
       if (origin && origin !== env.APP_ORIGIN) {
