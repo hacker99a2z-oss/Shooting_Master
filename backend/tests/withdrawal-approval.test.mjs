@@ -10,6 +10,7 @@ test("admin allowlist accepts positive numeric Telegram IDs and removes duplicat
 test("approval callback tokens accept only actions and UUID IDs", () => {
   assert.deepEqual(parseWithdrawalApprovalCallback("wd:approve:550e8400-e29b-41d4-a716-446655440000"), { action: "approve", withdrawalId: "550e8400-e29b-41d4-a716-446655440000" });
   assert.deepEqual(parseWithdrawalApprovalCallback("wd:reject:550e8400-e29b-41d4-a716-446655440000"), { action: "reject", withdrawalId: "550e8400-e29b-41d4-a716-446655440000" });
+  assert.deepEqual(parseWithdrawalApprovalCallback("wd:retry:550e8400-e29b-41d4-a716-446655440000"), { action: "retry", withdrawalId: "550e8400-e29b-41d4-a716-446655440000" });
   assert.equal(parseWithdrawalApprovalCallback("wd:approve:123"), null);
   assert.equal(parseWithdrawalApprovalCallback("wd:refund:550e8400-e29b-41d4-a716-446655440000"), null);
   assert.equal(parseWithdrawalApprovalCallback("x".repeat(65)), null);

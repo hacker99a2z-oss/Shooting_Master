@@ -1,4 +1,4 @@
-export type WithdrawalApprovalAction = "approve" | "reject";
+export type WithdrawalApprovalAction = "approve" | "reject" | "retry";
 
 export function parseAdminTelegramIds(value: string | undefined): number[] {
   const ids = (value ?? "").split(/[\s,;]+/).map((part) => part.trim())
@@ -9,7 +9,7 @@ export function parseAdminTelegramIds(value: string | undefined): number[] {
 
 export function parseWithdrawalApprovalCallback(value: unknown): { action: WithdrawalApprovalAction; withdrawalId: string } | null {
   if (typeof value !== "string" || value.length > 64) return null;
-  const match = /^wd:(approve|reject):([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(value);
+  const match = /^wd:(approve|reject|retry):([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(value);
   return match ? { action: match[1].toLowerCase() as WithdrawalApprovalAction, withdrawalId: match[2].toLowerCase() } : null;
 }
 
