@@ -82,6 +82,7 @@ jobs:
           VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
           VITE_SUPPORT_URL: ${{ vars.VITE_SUPPORT_URL }}
           VITE_PROOF_URL: ${{ vars.VITE_PROOF_URL }}
+          VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.VITE_WALLETCONNECT_PROJECT_ID }}
         run: npm run build
       - name: Ensure Pages project exists
         working-directory: backend

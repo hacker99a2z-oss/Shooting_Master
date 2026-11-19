@@ -10,7 +10,7 @@ import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
 import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, TrustAppMissingError, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
+import { TRUST_EXTENSION_URL, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -201,7 +201,7 @@ function Withdraw() {
       if (!provider) {
         if (currentDeviceIsPhone()) {
           // Phone: open the Trust Wallet app directly (Play Store / App Store if it is not installed).
-          toast.info("Opening Trust Wallet… Approve USDT on BNB Smart Chain (BEP-20).");
+          toast.info("Opening Trust Wallet… Approve the Shooting Master connection in the app.");
           provider = await connectTrustWalletSession();
         } else {
           // PC: connect the Trust Wallet extension, or open its download page when it is missing.
@@ -229,10 +229,6 @@ function Withdraw() {
       haptic("success");
       toast.success("Trust Wallet connected.");
     } catch (error) {
-      if (error instanceof TrustAppMissingError) {
-        toast.info(error.message);
-        return;
-      }
       const code = Number((error as { code?: number | string })?.code);
       toast.error(code === 4001 ? "Wallet connection was cancelled." : error instanceof Error ? error.message : "Could not connect Trust Wallet.");
     } finally {
