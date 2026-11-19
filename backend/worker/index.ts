@@ -96,11 +96,10 @@ function view(row:Row){
 async function ensurePlayer(db:any,user:AuthUser,startParam=""){
   let referrer:number|null=null;const m=/^ref_(\d+)$/.exec(startParam);
   if(m&&Number(m[1])!==user.id&&Number.isSafeInteger(Number(m[1])))referrer=Number(m[1]);
-  await db.execute({sql:"INSERT OR IGNORE INTO players (tg_id,first_name,username,photo_url,referred_by,coins,season_coins,season_id,games_played,best_score,daily_games,extra_plays,referral_count,referral_paid,created_at) VALUES (?,?,?,?,?,0,0,?,0,0,0,0,0,0,?)",
+  // One UPSERT refreshes Telegram profile fields and preserves first-touch referral attribution.
+  // This avoids two sequential Turso round-trips before the player row can be returned.
+  await db.execute({sql:"INSERT INTO players (tg_id,first_name,username,photo_url,referred_by,coins,season_coins,season_id,games_played,best_score,daily_games,extra_plays,referral_count,referral_paid,created_at) VALUES (?,?,?,?,?,0,0,?,0,0,0,0,0,0,?) ON CONFLICT(tg_id) DO UPDATE SET first_name=excluded.first_name,username=excluded.username,photo_url=excluded.photo_url,referred_by=CASE WHEN players.referred_by IS NULL AND excluded.referred_by IS NOT NULL AND players.referral_paid=0 AND players.games_played=0 THEN excluded.referred_by ELSE players.referred_by END",
     args:[user.id,user.firstName,user.username,user.photoUrl,referrer,seasonId(),new Date().toISOString()]});
-  // Apply the first valid referral link to an account that has not already been attributed.
-  // Never overwrite an existing referrer or attach a self-referral.
-  await db.execute({sql:"UPDATE players SET first_name=?,username=?,photo_url=?,referred_by=CASE WHEN referred_by IS NULL AND ? IS NOT NULL AND referral_paid=0 AND games_played=0 THEN ? ELSE referred_by END WHERE tg_id=?",args:[user.firstName,user.username,user.photoUrl,referrer,referrer,user.id]});
   const row=await playerRow(db,user.id);if(!row)throw new Error("Could not create player");return row;
 }
 async function txRun(db:any,fn:(tx:any)=>Promise<any>){
