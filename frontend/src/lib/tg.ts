@@ -24,6 +24,19 @@ export function webApp() {
   return typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
 }
 
+export type TelegramUserPreview = { id: number; first_name: string; username?: string; photo_url?: string };
+
+export function telegramUserPreview(): TelegramUserPreview | null {
+  const user = webApp()?.initDataUnsafe?.user;
+  if (!user || !Number.isSafeInteger(user.id) || typeof user.first_name !== "string") return null;
+  return {
+    id: user.id,
+    first_name: user.first_name,
+    username: typeof user.username === "string" ? user.username : undefined,
+    photo_url: typeof user.photo_url === "string" ? user.photo_url : undefined,
+  };
+}
+
 export function auth() {
   const wa = webApp();
   const initData: string = wa?.initData || "";
