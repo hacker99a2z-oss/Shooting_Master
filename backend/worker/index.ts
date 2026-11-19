@@ -725,7 +725,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const now=Date.now(),expiresAt=now+5*60_000,ticket=newWalletConnectTicket(),ticketHash=await walletConnectTicketHash(ticket);
       await db.execute({sql:"DELETE FROM wallet_connect_tickets WHERE expires_at<? OR created_at<?",args:[now-60_000,now-24*60*60_000]});
       await db.execute({sql:"INSERT INTO wallet_connect_tickets (ticket_hash,tg_id,created_at,expires_at,consumed_at) VALUES (?,?,?,?,NULL)",args:[ticketHash,user.id,now,expiresAt]});
-      const base=env.APP_ORIGIN.replace(/\\/+$/,"");
+      const base=env.APP_ORIGIN.replace(/\/+$/, "");
       return json({ticket,expiresAt,url:base+"/connect-wallet?ticket="+encodeURIComponent(ticket)});
     }
     if(path==="/api/wallet/connect-ticket/status"){
