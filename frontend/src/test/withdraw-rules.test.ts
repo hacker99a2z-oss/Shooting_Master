@@ -28,10 +28,10 @@ describe("withdraw rules", () => {
 
   it("checks required Coins before withdraw balance", () => {
     const result = checkWithdrawalEligibility({
-      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1999, walletConnected: true,
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_coins");
-    expect(result.message).toBe("Need 2,000 coins.");
+    expect(result.message).toBe("Need 1,000 more coins.");
     expect(result.canWithdraw).toBe(false);
   });
 
@@ -40,25 +40,33 @@ describe("withdraw rules", () => {
       usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_balance");
-    expect(result.message).toBe("Need 0.02 withdraw balance.");
+    expect(result.message).toBe("Need $0.01 more withdraw balance.");
     expect(result.canWithdraw).toBe(false);
   });
 
-  it("shows the full Coins requirement for a $0.05 withdrawal even when cash balance is enough", () => {
+  it("shows only the missing Coins for a $0.05 withdrawal", () => {
     const result = checkWithdrawalEligibility({
-      usd: 0.05, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 4999, walletConnected: true,
+      usd: 0.05, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 4000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_coins");
-    expect(result.message).toBe("Need 5,000 coins.");
+    expect(result.message).toBe("Need 1,000 more coins.");
     expect(result.requiredCoins).toBe(5000);
   });
 
-  it("shows the requested withdraw balance when $0.10 is requested with only $0.05 available", () => {
+  it("shows only the missing withdraw balance when the requested amount exceeds the cash balance", () => {
     const result = checkWithdrawalEligibility({
       usd: 0.10, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 10000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_balance");
-    expect(result.message).toBe("Need 0.10 withdraw balance.");
+    expect(result.message).toBe("Need $0.05 more withdraw balance.");
+  });
+
+  it("shows $0.02 more when $0.07 is requested but only $0.05 withdraw balance exists", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.07, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 7000, walletConnected: true,
+    });
+    expect(result.reason).toBe("insufficient_balance");
+    expect(result.message).toBe("Need $0.02 more withdraw balance.");
   });
 
 
