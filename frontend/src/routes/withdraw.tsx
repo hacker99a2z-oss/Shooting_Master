@@ -10,7 +10,7 @@ import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
 import { checkWithdrawalEligibility, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, disconnectTrustWalletProvider, prepareTrustWalletSession, restoreTrustWalletSession } from "@/lib/trust-connect";
+import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -26,6 +26,7 @@ type TrustWalletProvider = {
   removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
   disconnect?: () => Promise<void>;
   isTrust?: boolean;
+  isTrustWallet?: boolean;
 };
 
 declare global {
@@ -42,8 +43,10 @@ function collectTrustProvider(event: Event) {
     info?: { uuid?: string; rdns?: string };
     provider?: TrustWalletProvider;
   }>).detail;
-  if (detail?.info?.rdns?.toLowerCase() === "com.trustwallet.app" && detail.provider) {
-    trustWalletProviders.set(detail.info.uuid || "trust-wallet", detail.provider);
+  // Trust Wallet extension announces an EIP-1193 provider via EIP-6963.
+  // Identify it by the provider flags, not a single hard-coded rdns string.
+  if (detail?.provider && isTrustWalletInjectedProvider(detail.provider)) {
+    trustWalletProviders.set(detail.info?.uuid || "trust-wallet", detail.provider);
   }
 }
 
@@ -56,10 +59,10 @@ function getInjectedTrustWallet(): TrustWalletProvider | null {
   if (inApp?.request) return inApp;
 
   const announced = trustWalletProviders.values().next().value as TrustWalletProvider | undefined;
-  if (announced?.request) return announced;
+  if (announced && isTrustWalletInjectedProvider(announced)) return announced;
 
   const providers = window.ethereum?.providers ?? (window.ethereum ? [window.ethereum] : []);
-  return providers.find((provider) => provider.isTrust === true) ?? null;
+  return selectTrustWalletInjectedProvider(providers) as TrustWalletProvider | null;
 }
 
 async function switchToBnbSmartChain(provider: TrustWalletProvider) {
@@ -80,12 +83,18 @@ async function switchToBnbSmartChain(provider: TrustWalletProvider) {
 
 /** The PC extension can announce itself a moment late, so ask again briefly before giving up. */
 async function findTrustExtension(): Promise<TrustWalletProvider | null> {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 12; attempt++) {
     const provider = getInjectedTrustWallet();
     if (provider) return provider;
     await new Promise((resolve) => window.setTimeout(resolve, 150));
   }
   return null;
+}
+
+/** Telegram Desktop runs Mini Apps in its own isolated WebView, not in Brave's tab. */
+function isTelegramDesktopShell(): boolean {
+  const platform = String(window.Telegram?.WebApp?.platform ?? "").toLowerCase();
+  return ["tdesktop", "macos", "windows", "linux", "unigram"].includes(platform);
 }
 
 /** Trust Wallet shield logo shown on the Connect button. */
@@ -275,8 +284,13 @@ function Withdraw() {
       } else if (!provider) {
         provider = await findTrustExtension();
         if (!provider) {
-          toast.info("Trust Wallet extension not found. Install it, then tap Connect again.");
-          openLink(TRUST_EXTENSION_URL);
+          if (isTelegramDesktopShell()) {
+            toast.info("Telegram Desktop's built-in window cannot access Brave extensions. Open Telegram Web in Brave, sign in, then launch Shooting Master there to connect Trust Wallet.");
+            openLink("https://web.telegram.org/");
+          } else {
+            toast.info("Trust Wallet extension not found. Install or unlock it in this browser, then tap Connect again.");
+            openLink(TRUST_EXTENSION_URL);
+          }
           return;
         }
       }
