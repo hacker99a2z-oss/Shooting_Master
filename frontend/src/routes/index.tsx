@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Gamepad2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { preloadBattle } from "@/components/battle/preload";
 import { usePlayer } from "@/hooks/use-player";
 import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 import { COIN_COUNT_DELAY_MS, COIN_COUNT_MS, COIN_GAIN_KEY, countUpValue, type CoinGain } from "@/lib/coin-gain";
@@ -80,8 +79,19 @@ function Home() {
     }
   };
 
-  // Load the Battle Arena models now so the map is ready the moment Play is tapped.
-  useEffect(() => preloadBattle(), []);
+  // Defer the 3D engine/model preload until after the profile UI has painted.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void import("@/components/battle/preload")
+        .then(({ preloadBattle }) => { if (!cancelled) preloadBattle(); })
+        .catch(() => {});
+    }, 1_200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <AppShell>
