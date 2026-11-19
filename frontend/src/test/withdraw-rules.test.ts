@@ -40,7 +40,7 @@ describe("withdraw rules", () => {
       usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_balance");
-    expect(result.message).toBe("Need $0.02 withdraw balance.");
+    expect(result.message).toBe("Need 0.02 withdraw balance.");
     expect(result.canWithdraw).toBe(false);
   });
 
