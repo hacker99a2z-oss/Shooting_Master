@@ -577,7 +577,7 @@ async function telegramWebhook(request:Request,env:Env){
   if(chat?.type!=="private"||!/^\/start(?:@\w+)?(?:\s|$)/i.test(command))return json({ok:true});
   const text=[
     "🪙 <b>EARN COINS:</b> Defeat enemies to earn 10 coins per kill and collect bonus rewards.",
-    "💵 <b>DOLLAR BALANCE:</b> Your coins convert to dollars automatically — 100,000 coins = $1.",
+    "💵 <b>WITHDRAW BALANCE:</b> Daily cash claims add withdrawable dollars separately. Battle Arena kills earn Coins; withdrawals require both.",
     "💸 <b>WITHDRAW:</b> Requests wait for owner approval. Eligible USDT BEP-20 payments are sent after approval and blockchain confirmation."
   ].join("\n");
   const keyboard:StartKeyboardButton[][]=[
