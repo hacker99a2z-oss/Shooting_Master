@@ -23,6 +23,7 @@ describe("withdraw rules", () => {
     });
     expect(result.canWithdraw).toBe(false);
     expect(result.reason).toBe("below_minimum");
+    expect(result.message).toBe("Minimum withdrawal is $0.02.");
   });
 
   it("checks withdraw balance before checking Coins", () => {
@@ -30,6 +31,7 @@ describe("withdraw rules", () => {
       usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_balance");
+    expect(result.message).toBe("Need $0.02 withdraw balance.");
     expect(result.canWithdraw).toBe(false);
   });
 
@@ -38,6 +40,7 @@ describe("withdraw rules", () => {
       usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1999, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_coins");
+    expect(result.message).toBe("Need 2,000 coins.");
     expect(result.canWithdraw).toBe(false);
   });
 
@@ -47,6 +50,7 @@ describe("withdraw rules", () => {
     });
     expect(result.canWithdraw).toBe(true);
     expect(result.reason).toBe("ready");
+    expect(result.message).toBe("");
   });
 
   it("requires a connected wallet after amount and balances pass", () => {
