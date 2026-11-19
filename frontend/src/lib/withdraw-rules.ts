@@ -80,7 +80,7 @@ export function checkWithdrawalEligibility(input: {
     message = `Need ${(requiredCoins - coins).toLocaleString()} more coins.`;
   } else if (requiredCents > withdrawBalanceCents) {
     reason = "insufficient_balance";
-    message = `Need ${((requiredCents - withdrawBalanceCents) / 100).toFixed(2)} more withdraw balance.`;
+    message = `Need $${((requiredCents - withdrawBalanceCents) / 100).toFixed(2)} more withdraw balance.`;
   } else if (!walletConnected) {
     reason = "wallet_not_connected";
     message = "Connect Trust Wallet to continue.";
