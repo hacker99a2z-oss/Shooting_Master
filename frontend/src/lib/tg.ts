@@ -15,7 +15,7 @@ type AdsgramController = {
 let adsgramController: AdsgramController | null = null;
 let adShowing = false;
 
-export const BOT_USERNAME = import.meta.env['VITE_TELEGRAM_BOT_USERNAME'] || "YourBot";
+export const BOT_USERNAME = String(import.meta.env['VITE_TELEGRAM_BOT_USERNAME'] || "YourBot").replace(/\\n$/, "").replace(/^@/, "").trim();
 export const ADSGRAM_BLOCK_ID = import.meta.env['VITE_ADSGRAM_BLOCK_ID'] || "";
 export const SUPPORT_URL = import.meta.env['VITE_SUPPORT_URL'] || "https://t.me/";
 export const PROOF_URL = import.meta.env['VITE_PROOF_URL'] || "https://t.me/";
