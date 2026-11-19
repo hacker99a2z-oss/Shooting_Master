@@ -1070,7 +1070,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         // An ad-unlocked game has already consumed its verified extra play.
         // Abandoning it awards no coins and starts the normal cooldown.
         if(Number(session.uses_extra_play)>0){
-          const readyAt=now+AD_COOLDOWN_MS;
+          const readyAt=nextAdReadyAt(now);
           await tx.execute({sql:"UPDATE players SET ad_ready_at=CASE WHEN ad_ready_at IS NULL OR ad_ready_at<? THEN ? ELSE ad_ready_at END WHERE tg_id=?",args:[readyAt,readyAt,user.id]});
         }
         player=await playerRow(db,user.id,tx);
