@@ -415,12 +415,11 @@ function Withdraw() {
             <span className="wallet-amount-suffix">USDT</span>
           </div>
         </label>
-        <p className={"wallet-rate-note" + (eligibility.canWithdraw ? "" : " is-short")}>
-          Needs <span className="wallet-rate-coins">{neededCoins.toLocaleString()}</span> coins + <span className="wallet-rate-coins">${(neededCents / 100).toFixed(2)}</span> withdraw balance
-        </p>
-        <p className={"mt-2 text-xs " + (eligibility.canWithdraw ? "text-success" : "text-destructive")} role="status" aria-live="polite">
-          {eligibility.message}
-        </p>
+        {eligibility.reason !== "ready" && (
+          <p className="mt-2 text-xs text-destructive" role="status" aria-live="polite">
+            {eligibility.message}
+          </p>
+        )}
         <button onClick={submit} disabled={busy || !eligibility.canWithdraw} className="fire-button w-full" aria-disabled={busy || !eligibility.canWithdraw}>
           {busy ? "Sending…" : "Withdraw"}
         </button>
