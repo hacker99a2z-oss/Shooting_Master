@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { BadgeCheck, CheckCircle2, Clock3, ExternalLink, Headphones, History, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
-import { createWalletConnectTicket, getWalletConnectTicketStatus, getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type WalletConnectTicket, type Withdrawal } from "@/lib/api.functions";
+import { createWalletConnectTicket, disconnectWalletDestination, getWalletConnectTicketStatus, getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type WalletConnectTicket, type Withdrawal } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
@@ -175,7 +175,12 @@ function Withdraw() {
     window.dispatchEvent(new Event("eip6963:requestProvider"));
 
     void getWalletDestination(auth()).then(({ destination }) => {
-      if (!cancelled && destination?.address) setLastWalletAddress(destination.address);
+      if (!cancelled && destination?.address && Number(destination.chainId) === BSC_CHAIN_ID) {
+        setLastWalletAddress(destination.address);
+        setWalletAddress(destination.address);
+        setIsBscNetwork(true);
+        setExternalWalletVerified(true);
+      }
     }).catch(() => {});
 
     (async () => {
@@ -289,10 +294,20 @@ function Withdraw() {
   const connectTrustWallet = async () => {
     if (connecting) return;
     if (connected && externalWalletVerified && !walletProvider) {
-      setWalletAddress("");
-      setIsBscNetwork(false);
-      setExternalWalletVerified(false);
-      toast.success("Wallet disconnected from Shooting Master. Your saved destination is unchanged.");
+      setConnecting(true);
+      try {
+        await disconnectWalletDestination(auth());
+        setWalletAddress("");
+        setLastWalletAddress("");
+        setIsBscNetwork(false);
+        setExternalWalletVerified(false);
+        setWalletBridgeTicket(null);
+        toast.success("Trust Wallet disconnected.");
+      } catch {
+        toast.error("Could not disconnect the saved wallet. Please try again.");
+      } finally {
+        setConnecting(false);
+      }
       return;
     }
     if (currentDeviceNeedsExternalWalletBridge()) {
@@ -310,8 +325,11 @@ function Withdraw() {
       setConnecting(true);
       try {
         await disconnectTrustWalletProvider(walletProvider);
+        await disconnectWalletDestination(auth());
         setWalletProvider(null);
         setWalletAddress("");
+        setLastWalletAddress("");
+        setExternalWalletVerified(false);
         setIsBscNetwork(false);
         setPendingWalletConnectUrl(null);
         toast.success("Trust Wallet disconnected. Your last-used address is saved.");

@@ -86,6 +86,7 @@ export interface RootRouteChildren {
   PlayRoute: typeof PlayRoute
   ReferRoute: typeof ReferRoute
   WithdrawRoute: typeof WithdrawRoute
+  ConnectWalletRoute: typeof ConnectWalletRoute
 }
 
 declare module '@tanstack/react-router' {

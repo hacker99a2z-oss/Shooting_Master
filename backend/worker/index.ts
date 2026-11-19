@@ -742,6 +742,10 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const result=await db.execute({sql:"SELECT address,asset,network,chain_id AS chainId,updated_at AS updatedAt FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
       return json({destination:result.rows[0]??null});
     }
+    if(path==="/api/wallet/disconnect"){
+      await db.execute({sql:"DELETE FROM wallet_destinations WHERE tg_id=?",args:[user.id]});
+      return json({ok:true});
+    }
     if(path==="/api/wallet/save"){
       const destination=destinationInput(body);
       await ensurePlayer(db,user);

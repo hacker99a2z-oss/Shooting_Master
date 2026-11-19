@@ -33,3 +33,4 @@ export type WalletConnectTicket={ticket:string;expiresAt:number;url:string};
 export const createWalletConnectTicket=(data:Auth)=>post<WalletConnectTicket>("wallet/connect-ticket",data);
 export const getWalletConnectTicketStatus=(data:Auth & {ticket:string})=>post<{completed:boolean;expired:boolean;destination:WalletDestination|null}>("wallet/connect-ticket/status",data);
 export const completeExternalWalletConnect=(data:{ticket:string;address:string;asset:"USDT";network:"BEP20"})=>post<{ok:boolean;destination:WalletDestination}>("wallet/connect-external",data);
+export const disconnectWalletDestination=(data:Auth)=>post<{ok:boolean}>("wallet/disconnect",data);
