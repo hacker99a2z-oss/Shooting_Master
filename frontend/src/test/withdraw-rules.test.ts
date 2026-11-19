@@ -1,10 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
-import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, checkWithdrawalEligibility, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, checkWithdrawalEligibility, isPendingWithdrawal, isWalletConnectionReady, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
 import { shortenWalletAddress } from "@/lib/wallet-rules";
 
 describe("withdraw rules", () => {
+  it("accepts a verified desktop extension bridge without an injected provider in Telegram", () => {
+    expect(isWalletConnectionReady({
+      connected: true,
+      walletProviderAvailable: false,
+      externalWalletVerified: true,
+      walletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
+      lastWalletAddress: "0xcaa719ad000000000000000000000000c772c50ef1",
+    })).toBe(true);
+  });
+
+  it("does not accept a displayed saved address alone until a wallet path is verified", () => {
+    expect(isWalletConnectionReady({
+      connected: true,
+      walletProviderAvailable: false,
+      externalWalletVerified: false,
+      walletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
+      lastWalletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
+    })).toBe(false);
+  });
+
+  it("rejects a wallet address that differs from the saved address", () => {
+    expect(isWalletConnectionReady({
+      connected: true,
+      walletProviderAvailable: true,
+      externalWalletVerified: false,
+      walletAddress: "0x1111111111111111111111111111111111111111",
+      lastWalletAddress: "0x2222222222222222222222222222222222222222",
+    })).toBe(false);
+  });
+
   it("minimum withdrawal is $0.02", () => expect(MIN_WITHDRAW_USD).toBe(0.02));
   it("$0.02 costs 2,000 coins and requires two cents balance", () => {
     expect(coinsForWithdrawUsd(0.02)).toBe(2000);

@@ -43,6 +43,20 @@ export type WithdrawalEligibilityReason =
   | "wallet_not_connected"
   | "ready";
 
+/** A saved desktop-extension connection has no injected provider inside Telegram's WebView. */
+export function isWalletConnectionReady(input: {
+  connected: boolean;
+  walletProviderAvailable: boolean;
+  externalWalletVerified: boolean;
+  walletAddress: string;
+  lastWalletAddress: string;
+}): boolean {
+  return input.connected &&
+    (input.walletProviderAvailable || input.externalWalletVerified) &&
+    Boolean(input.walletAddress) &&
+    input.walletAddress.toLowerCase() === input.lastWalletAddress.toLowerCase();
+}
+
 export type WithdrawalEligibility = {
   canWithdraw: boolean;
   reason: WithdrawalEligibilityReason;

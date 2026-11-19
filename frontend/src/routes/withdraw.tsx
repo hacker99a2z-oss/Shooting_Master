@@ -9,7 +9,7 @@ import { createWalletConnectTicket, disconnectWalletDestination, getWalletConnec
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
-import { checkWithdrawalEligibility, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { checkWithdrawalEligibility, isWalletConnectionReady, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, currentDeviceNeedsExternalWalletBridge, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
@@ -159,12 +159,21 @@ function Withdraw() {
   const amount = Number(usd);
   const neededCents = withdrawalCentsForUsd(amount);
   const neededCoins = coinsForWithdrawUsd(amount);
+  // Desktop extension connections are verified through the one-time browser bridge,
+  // so walletProvider is intentionally null inside Telegram Desktop's isolated WebView.
+  const walletConnectionReady = isWalletConnectionReady({
+    connected,
+    walletProviderAvailable: Boolean(walletProvider),
+    externalWalletVerified,
+    walletAddress,
+    lastWalletAddress,
+  });
   const eligibility = checkWithdrawalEligibility({
     usd: amount,
     minimumUsd: MIN_WITHDRAW_USD,
     withdrawBalanceCents,
     coins,
-    walletConnected: connected && (Boolean(walletProvider) || externalWalletVerified) && walletAddress.toLowerCase() === lastWalletAddress.toLowerCase(),
+    walletConnected: walletConnectionReady,
   });
 
   // Restore the server-saved address and approved wallet session. Prepare a fresh mobile
@@ -423,7 +432,7 @@ function Withdraw() {
 
   const submit = async () => {
     if (busy) return;
-    if (!connected || !walletProvider || walletAddress.toLowerCase() !== lastWalletAddress.toLowerCase()) {
+    if (!walletConnectionReady) {
       remindConnect();
       return;
     }
