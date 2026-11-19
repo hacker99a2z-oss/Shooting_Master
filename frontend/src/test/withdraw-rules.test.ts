@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
-import { HISTORY_LIMIT, coinsForWithdrawUsd, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
 import { shortenWalletAddress } from "@/lib/wallet-rules";
 
 describe("withdraw rules", () => {
   it("minimum withdrawal is $0.02", () => expect(MIN_WITHDRAW_USD).toBe(0.02));
-  it("$0.02 costs 2,000 coins", () => expect(coinsForWithdrawUsd(0.02)).toBe(2000));
+  it("$0.02 costs 2,000 coins and requires two cents balance", () => {
+    expect(coinsForWithdrawUsd(0.02)).toBe(2000);
+    expect(withdrawalCentsForUsd(0.02)).toBe(2);
+  });
+  it("uses exact cents for decimal amounts", () => {
+    expect(withdrawalCentsForUsd(0.29)).toBe(29);
+    expect(coinsForWithdrawUsd(0.29)).toBe(29000);
+    expect(withdrawalCentsForUsd(0.021)).toBe(0);
+  });
   it("coins scale with the amount", () => expect(coinsForWithdrawUsd(0.5)).toBe(50000));
   it("history shows the last 5 withdrawals", () => expect(HISTORY_LIMIT).toBe(5));
   it("stays pending until paid", () => {
@@ -20,7 +28,7 @@ describe("withdraw rules", () => {
     expect(withdrawalStatusLabel("processing")).toBe("Processing");
     expect(withdrawalStatusLabel("pending_review")).toBe("Manual Review");
     expect(withdrawalStatusLabel("payout_failed_review")).toBe("Manual Review");
-    expect(withdrawalStatusLabel("paid")).toBe("Sent");
+    expect(withdrawalStatusLabel("paid")).toBe("View");
     expect(withdrawalStatusLabel("rejected")).toBe("Rejected");
   });
 });

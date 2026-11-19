@@ -79,6 +79,15 @@ try {
   } else {
     console.log("Turso schema migration 0009 already applied.");
   }
+
+  const withdrawBalanceMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=10 LIMIT 1");
+  if (!withdrawBalanceMigration.rows.length) {
+    const withdrawBalanceSql = await readFile(new URL("../migrations/0010_withdraw_balance.sql", import.meta.url), "utf8");
+    await db.executeMultiple(withdrawBalanceSql);
+    console.log("Turso schema migration 0010 applied.");
+  } else {
+    console.log("Turso schema migration 0010 already applied.");
+  }
 } finally {
   db.close();
 }

@@ -19,3 +19,11 @@ export function approvalPayoutLimitError(usd: number, alreadyCommittedTodayUsd: 
   if (Math.round(usd * 100) + Math.round(alreadyCommittedTodayUsd * 100) > 10_000) return "The $100 daily automatic payout limit has been reached.";
   return null;
 }
+
+export function withdrawalAmountsFromUsd(value: unknown): { usd: number; usdCents: number; coins: number } | null {
+  const rawUsd = Number(value);
+  if (!Number.isFinite(rawUsd)) return null;
+  const usdCents = Math.round(rawUsd * 100);
+  if (!Number.isSafeInteger(usdCents) || usdCents < 2 || Math.abs(rawUsd - usdCents / 100) > 1e-8) return null;
+  return { usd: usdCents / 100, usdCents, coins: usdCents * 1_000 };
+}

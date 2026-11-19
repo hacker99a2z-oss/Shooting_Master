@@ -1,3 +1,4 @@
+import { withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback } from "../withdrawal-approval.ts";
@@ -19,4 +20,12 @@ test("automatic payout caps still apply to an owner approval", () => {
   assert.match(approvalPayoutLimitError(0.01, 0) ?? "", /outside the automatic payout limit/);
   assert.match(approvalPayoutLimitError(0.02, 100) ?? "", /daily automatic payout limit/);
   assert.equal(approvalPayoutLimitError(10, 90), null);
+});
+
+test("withdrawal amounts use exact integer cents and 1,000 coins per cent", () => {
+  assert.deepEqual(withdrawalAmountsFromUsd(0.02), { usd: 0.02, usdCents: 2, coins: 2000 });
+  assert.deepEqual(withdrawalAmountsFromUsd(0.29), { usd: 0.29, usdCents: 29, coins: 29000 });
+  assert.equal(withdrawalAmountsFromUsd(0.019), null);
+  assert.equal(withdrawalAmountsFromUsd(0.021), null);
+  assert.equal(withdrawalAmountsFromUsd("not-a-number"), null);
 });

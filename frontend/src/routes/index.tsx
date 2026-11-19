@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Gamepad2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -65,10 +66,9 @@ function Home() {
     setClaiming(target);
     setClaimError("");
     try {
-      const before = me?.coins;
       const p = await claimDailyGoal({ ...auth(), target });
-      if (p.reward > 0) qc.setQueryData<CoinGain>(COIN_GAIN_KEY, { from: before ?? p.coins - p.reward, to: p.coins, gained: p.reward });
       qc.setQueryData(["me"], p);
+      toast.success("$" + (p.balanceRewardCents / 100).toFixed(2) + " added to Withdraw Balance.");
     } catch (e) {
       setClaimError(e instanceof Error ? e.message : "Claim failed");
     } finally {

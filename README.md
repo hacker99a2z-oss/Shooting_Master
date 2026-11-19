@@ -26,8 +26,14 @@ Add these GitHub Actions repository secrets:
 
 Optional GitHub Actions variables: VITE_ADSGRAM_BLOCK_ID, VITE_SUPPORT_URL, VITE_PROOF_URL, VITE_WALLETCONNECT_PROJECT_ID (public Reown project ID), OFFICIAL_CHANNEL_URL, OFFICIAL_GROUP_URL. The Telegram bot username is fetched directly from the configured bot token during deployment. Set OFFICIAL_CHANNEL_URL and OFFICIAL_GROUP_URL to the real HTTPS Telegram channel/group links (for example, https://t.me/yourchannel or https://t.me/+invitecode); each configured link adds its matching button to the Telegram /start welcome message. Missing links are reported as deployment warnings rather than replaced with a non-working https://t.me/ homepage.
 
-The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev.
+The workflow uses Pages project shooting-master and API CORS origin https://shooting-master.pages.dev. Server-only environment variables and payout credentials are never bundled into the Vite frontend; only explicitly prefixed public `VITE_*` variables are exposed at build time.
 
+
+## Separate Coins and Withdraw Balance
+
+Battle Arena kill rewards, referral rewards and coin bonuses are stored in `players.coins`. Daily Games cash claims (`$0.03` at 10 games and `$0.04` at 20 games) are credited to `players.withdraw_balance_cents`, not Coins. The 100-game cash bonus also credits withdraw balance.
+
+A withdrawal is accepted only when the signed-in Telegram user has a saved BEP-20 destination, enough withdraw balance, and enough Coins. The server calculates the required values from the USD amount: 100,000 Coins per $1 (therefore 2,000 Coins plus $0.02 withdraw balance for a $0.02 withdrawal). Both amounts are debited in one database transaction. An owner rejection or failed owner-notification delivery refunds both amounts exactly once. Clients cannot submit replacement coin or balance totals; the backend derives and validates all credits/debits. Existing Coin balances are not converted into withdraw balance by migration.
 
 ## Automatic USDT BEP-20 payouts
 

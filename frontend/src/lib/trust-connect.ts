@@ -4,22 +4,13 @@ type Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+  connect?: () => Promise<void>;
+  disconnect?: () => Promise<void>;
+  session?: unknown;
 };
 
-// Public Reown (WalletConnect) project ID. Not a secret; the allowed domain list in Reown protects it.
-const DEFAULT_WALLETCONNECT_PROJECT_ID = "b5a064d2976a1d6913d536cb44021a74";
-
-// Official Trust Wallet browser extension download page, opened on PCs that do not have it yet.
-export const TRUST_EXTENSION_URL = "https://trustwallet.com/browser-extension";
-
-/**
- * Official Trust Wallet Universal Link for a WalletConnect v2 session.
- * HTTPS links are handled by the OS and route to Trust Wallet when installed,
- * while the Trust Wallet website provides the install fallback otherwise.
- */
-export function trustAppConnectLink(uri: string): string {
-  return "https://link.trustwallet.com/wc?uri=" + encodeURIComponent(uri);
-}
+type PreparedConnection = { provider: Provider; link: string | null; connectPromise: Promise<void> | null };
+let preparedConnection: PreparedConnection | null = null;
 
 /** Phone = Telegram on Android/iOS, or a mobile browser. Everything else is treated as a PC. */
 export function isPhoneDevice(platform?: string, userAgent?: string): boolean {
@@ -59,33 +50,82 @@ async function initWalletConnect(showQrModal: boolean) {
 }
 
 /**
- * Phone flow: create a WalletConnect session and open the official Trust Wallet
- * HTTPS universal link. Telegram's openLink launches it outside the Mini App;
- * normal mobile browsers hand it to the OS universal-link handler.
+ * Prepare the WalletConnect URI in the background so the Connect tap can open
+ * Trust Wallet synchronously through Telegram's openLink.
  */
-export async function connectTrustWalletSession(onConnectLink: (link: string) => void): Promise<Provider> {
-  const provider = await initWalletConnect(false);
-  if (provider.session) return provider as Provider;
-
-  // WalletConnect creates its URI asynchronously. Do not navigate the Telegram
-  // WebView from this callback: Telegram requires openLink to run from a fresh
-  // user interaction. Hand the link to the UI so the user can tap "Open Trust Wallet".
-  provider.on("display_uri", (uri: string) => {
-    onConnectLink(trustAppConnectLink(uri));
+export async function prepareTrustWalletSession(
+  onConnectLink: (link: string) => void,
+  onError?: (error: unknown) => void,
+): Promise<void> {
+  if (preparedConnection) {
+    if (preparedConnection.link) onConnectLink(preparedConnection.link);
+    return;
+  }
+  const provider = await initWalletConnect(false) as Provider;
+  if (provider.session) {
+    preparedConnection = { provider, link: null, connectPromise: null };
+    return;
+  }
+  const prepared: PreparedConnection = { provider, link: null, connectPromise: null };
+  preparedConnection = prepared;
+  provider.on?.("display_uri", (uri: string) => {
+    if (preparedConnection !== prepared) return;
+    prepared.link = trustAppConnectLink(uri);
+    onConnectLink(prepared.link);
   });
-
-  await provider.connect();
-  return provider as Provider;
+  if (!provider.connect) {
+    preparedConnection = null;
+    throw new Error("WalletConnect provider cannot start a connection.");
+  }
+  const promise = provider.connect();
+  prepared.connectPromise = promise;
+  void promise.catch((error) => {
+    if (preparedConnection === prepared) preparedConnection = null;
+    onError?.(error);
+  });
 }
 
-/** Silently restores an earlier Trust Wallet approval without opening any wallet window. */
+export function pendingTrustWalletConnectLink(): string | null {
+  return preparedConnection?.link ?? null;
+}
+
+export async function connectPreparedTrustWalletSession(): Promise<Provider> {
+  const prepared = preparedConnection;
+  if (!prepared) throw new Error("Trust Wallet is not ready yet. Tap Connect again in a moment.");
+  if (prepared.provider.session) {
+    preparedConnection = null;
+    return prepared.provider;
+  }
+  if (!prepared.link || !prepared.connectPromise) {
+    throw new Error("Trust Wallet is still preparing the secure connection. Please try again.");
+  }
+  await prepared.connectPromise;
+  if (!prepared.provider.session) throw new Error("Trust Wallet did not approve the connection.");
+  preparedConnection = null;
+  return prepared.provider;
+}
+
 export async function restoreTrustWalletSession(): Promise<Provider | null> {
   try {
+    if (preparedConnection?.provider.session) return preparedConnection.provider;
     const hasSession = Object.keys(window.localStorage).some((key) => key.startsWith("wc@2"));
     if (!hasSession) return null;
     const provider = await initWalletConnect(false);
     return provider.session ? (provider as Provider) : null;
   } catch {
     return null;
+  }
+}
+
+export async function disconnectTrustWalletProvider(provider: Provider): Promise<void> {
+  if (preparedConnection?.provider === provider) preparedConnection = null;
+  if (provider.disconnect) {
+    await provider.disconnect();
+    return;
+  }
+  try {
+    await provider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+  } catch {
+    // Some injected wallets do not implement account permission revocation.
   }
 }

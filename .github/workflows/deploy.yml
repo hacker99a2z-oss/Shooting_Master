@@ -35,6 +35,9 @@ jobs:
       - name: Install backend tools
         working-directory: backend
         run: npm install --no-audit --no-fund
+      - name: Test backend payout and balance rules
+        working-directory: backend
+        run: npm test
       - name: Apply Turso schema
         working-directory: backend
         run: npm run db:migrate
@@ -64,6 +67,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Test frontend rules
+        working-directory: frontend
+        run: npm test
       - name: Validate AdsGram Block ID
         env:
           VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}

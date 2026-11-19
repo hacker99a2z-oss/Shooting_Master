@@ -5,12 +5,12 @@ import { toast } from "sonner";
 import { BadgeCheck, CheckCircle2, Clock3, ExternalLink, Headphones, History, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
-import { getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal } from "@/lib/api.functions";
+import { getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
-import { MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
+import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
-import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
+import { coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, disconnectTrustWalletProvider, prepareTrustWalletSession, restoreTrustWalletSession } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -24,6 +24,7 @@ type TrustWalletProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
   removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+  disconnect?: () => Promise<void>;
   isTrust?: boolean;
 };
 
@@ -128,6 +129,8 @@ function Withdraw() {
   });
   const [usd, setUsd] = useState(String(MIN_WITHDRAW_USD));
   const [walletAddress, setWalletAddress] = useState("");
+  const [lastWalletAddress, setLastWalletAddress] = useState("");
+  const [walletConnectPreparing, setWalletConnectPreparing] = useState(false);
   const [walletProvider, setWalletProvider] = useState<TrustWalletProvider | null>(null);
   const [isBscNetwork, setIsBscNetwork] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -139,31 +142,51 @@ function Withdraw() {
 
   const connected = Boolean(walletAddress) && isBscNetwork;
   const coins = me?.coins ?? 0;
-  const balanceUsd = coinsToUsd(coins);
+  const withdrawBalanceCents = me?.withdrawBalanceCents ?? 0;
+  const balanceUsd = withdrawBalanceCents / 100;
   const amount = Number(usd);
+  const neededCents = withdrawalCentsForUsd(amount);
   const neededCoins = coinsForWithdrawUsd(amount);
 
-  // Pick up the Trust Wallet extension and silently restore an earlier approval.
+  // Restore the server-saved address and approved wallet session. Prepare a fresh mobile
+  // WalletConnect URI ahead of the user's tap so the Connect tap opens Trust Wallet directly.
   useEffect(() => {
     let cancelled = false;
     window.addEventListener("eip6963:announceProvider", collectTrustProvider);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    void getWalletDestination(auth()).then(({ destination }) => {
+      if (!cancelled && destination?.address) setLastWalletAddress(destination.address);
+    }).catch(() => {});
+
     (async () => {
       const injected = getInjectedTrustWallet();
       const provider = injected
         ? ((await injected.request({ method: "eth_accounts" }).then(firstAccount).catch(() => "")) ? injected : null)
         : await restoreTrustWalletSession();
-      if (!provider || cancelled) return;
-      const address = firstAccount(await provider.request({ method: "eth_accounts" }).catch(() => []));
-      const chainId = await provider.request({ method: "eth_chainId" }).catch(() => 0);
-      if (cancelled || !validBep20Address(address)) return;
-      setWalletProvider(provider);
-      setWalletAddress(address);
-      setIsBscNetwork(Number(chainId) === BSC_CHAIN_ID);
+      if (provider && !cancelled) {
+        const address = firstAccount(await provider.request({ method: "eth_accounts" }).catch(() => []));
+        const chainId = await provider.request({ method: "eth_chainId" }).catch(() => 0);
+        if (!cancelled && validBep20Address(address)) {
+          setWalletProvider(provider);
+          setWalletAddress(address);
+          setLastWalletAddress(address);
+          setIsBscNetwork(Number(chainId) === BSC_CHAIN_ID);
+          return;
+        }
+      }
+      if (!cancelled && currentDeviceIsPhone()) {
+        setWalletConnectPreparing(true);
+        void prepareTrustWalletSession(
+          (link) => { if (!cancelled) { setPendingWalletConnectUrl(link); setWalletConnectPreparing(false); } },
+          () => { if (!cancelled) setWalletConnectPreparing(false); },
+        ).catch(() => { if (!cancelled) setWalletConnectPreparing(false); });
+      }
     })();
+
     return () => {
       cancelled = true;
-      window.removeEventListener("eip6963:announceProvider", collectTrustProvider);
+      window.removeEventListener("eip6969:announceProvider", collectTrustProvider);
       window.clearTimeout(hintTimer.current);
     };
   }, []);
@@ -172,7 +195,12 @@ function Withdraw() {
     if (!walletProvider) return;
     const handleAccountsChanged = (...args: unknown[]) => {
       const address = firstAccount(args[0]);
-      setWalletAddress(validBep20Address(address) ? address : "");
+      const valid = validBep20Address(address) ? address : "";
+      setWalletAddress(valid);
+      if (valid) {
+        setLastWalletAddress(valid);
+        saveWalletDestination({ ...auth(), address: valid, asset: "USDT", network: "BEP20" }).catch(() => {});
+      }
     };
     const handleChainChanged = (...args: unknown[]) => setIsBscNetwork(Number(args[0]) === BSC_CHAIN_ID);
     const handleDisconnect = () => {
@@ -192,48 +220,85 @@ function Withdraw() {
 
   const connectTrustWallet = async () => {
     if (connecting) return;
-    if (connected) {
-      toast.success("Trust Wallet is connected.");
+    if (connected && walletProvider) {
+      setConnecting(true);
+      try {
+        await disconnectTrustWalletProvider(walletProvider);
+        setWalletProvider(null);
+        setWalletAddress("");
+        setIsBscNetwork(false);
+        setPendingWalletConnectUrl(null);
+        toast.success("Trust Wallet disconnected. Your last-used address is saved.");
+        if (currentDeviceIsPhone()) {
+          setWalletConnectPreparing(true);
+          void prepareTrustWalletSession(
+            (link) => { setPendingWalletConnectUrl(link); setWalletConnectPreparing(false); },
+            () => setWalletConnectPreparing(false),
+          ).catch(() => setWalletConnectPreparing(false));
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not disconnect Trust Wallet.");
+      } finally {
+        setConnecting(false);
+      }
       return;
     }
+
     setConnecting(true);
     try {
       let provider: TrustWalletProvider | null = getInjectedTrustWallet();
-      if (!provider) {
-        if (currentDeviceIsPhone()) {
-          // Phone: open the Trust Wallet app directly (Play Store / App Store if it is not installed).
-          toast.info("Opening Trust Wallet… Approve the Shooting Master connection in the app.");
-          setPendingWalletConnectUrl(null);
-          provider = await connectTrustWalletSession(setPendingWalletConnectUrl);
-        } else {
-          // PC: connect the Trust Wallet extension, or open its download page when it is missing.
-          provider = await findTrustExtension();
-          if (!provider) {
-            toast.info("Trust Wallet extension not found. Install it, then tap Connect again.");
-            openLink(TRUST_EXTENSION_URL);
-            return;
+      if (!provider && currentDeviceIsPhone()) {
+        const link = pendingWalletConnectUrl;
+        if (!link) {
+          toast.info("Trust Wallet is preparing the secure connection. Tap Connect again in a moment.");
+          if (!walletConnectPreparing) {
+            setWalletConnectPreparing(true);
+            void prepareTrustWalletSession(
+              (preparedLink) => { setPendingWalletConnectUrl(preparedLink); setWalletConnectPreparing(false); },
+              () => setWalletConnectPreparing(false),
+            ).catch(() => setWalletConnectPreparing(false));
           }
+          return;
+        }
+        // Telegram requires openLink to run synchronously from the user's tap.
+        const telegram = window.Telegram?.WebApp;
+        if (typeof telegram?.openLink === "function") telegram.openLink(link);
+        else window.location.assign(link);
+        provider = await connectPreparedTrustWalletSession() as TrustWalletProvider;
+      } else if (!provider) {
+        provider = await findTrustExtension();
+        if (!provider) {
+          toast.info("Trust Wallet extension not found. Install it, then tap Connect again.");
+          openLink(TRUST_EXTENSION_URL);
+          return;
         }
       }
       if (!provider) throw new Error("Could not open Trust Wallet.");
-
       const address = firstAccount(await provider.request({ method: "eth_requestAccounts" }));
       if (!validBep20Address(address)) throw new Error("Trust Wallet did not return a valid BEP-20 address.");
       await switchToBnbSmartChain(provider);
       const active = firstAccount(await provider.request({ method: "eth_accounts" })) || address;
       if (!validBep20Address(active)) throw new Error("No valid wallet account is connected.");
 
+      await saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" });
       setWalletProvider(provider);
       setWalletAddress(active);
+      setLastWalletAddress(active);
       setPendingWalletConnectUrl(null);
       setIsBscNetwork(true);
       setShowConnectHint(false);
-      saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" }).catch(() => {});
       haptic("success");
       toast.success("Trust Wallet connected.");
     } catch (error) {
       const code = Number((error as { code?: number | string })?.code);
       toast.error(code === 4001 ? "Wallet connection was cancelled." : error instanceof Error ? error.message : "Could not connect Trust Wallet.");
+      if (currentDeviceIsPhone()) {
+        setWalletConnectPreparing(true);
+        void prepareTrustWalletSession(
+          (link) => { setPendingWalletConnectUrl(link); setWalletConnectPreparing(false); },
+          () => setWalletConnectPreparing(false),
+        ).catch(() => setWalletConnectPreparing(false));
+      }
     } finally {
       setConnecting(false);
     }
@@ -249,16 +314,16 @@ function Withdraw() {
 
   const submit = async () => {
     if (busy) return;
-    if (!connected || !walletProvider) {
+    if (!connected || !walletProvider || walletAddress.toLowerCase() !== lastWalletAddress.toLowerCase()) {
       remindConnect();
       return;
     }
-    if (!Number.isFinite(amount) || amount < MIN_WITHDRAW_USD) {
+    if (!Number.isFinite(amount) || amount < MIN_WITHDRAW_USD || neededCents < 2) {
       toast.error(`Minimum withdrawal is $${MIN_WITHDRAW_USD}.`);
       return;
     }
-    if (neededCoins > coins) {
-      toast.error("Not enough coins for this amount.");
+    if (neededCoins > coins || neededCents > withdrawBalanceCents) {
+      toast.error(neededCoins > coins ? "Not enough coins for this amount." : "Not enough withdraw balance for this amount.");
       return;
     }
 
@@ -267,7 +332,7 @@ function Withdraw() {
       const result = await requestWithdraw({ ...auth(), usd: amount, wallet: walletAddress, asset: "USDT", network: "BEP20" });
       haptic("success");
       // Deduct right away; the server has already reserved these coins.
-      if (me) setPlayer({ ...me, coins: Math.max(0, me.coins - neededCoins) });
+      setPlayer(result.player);
       qc.setQueryData<Withdrawal[]>(["withdrawals"], (rows = []) => [
         { id: result.id, coins: neededCoins, usd: Math.floor(amount * 100) / 100, wallet: walletAddress, status: result.status, created_at: new Date().toISOString(), channel_post_url: null },
         ...rows,
@@ -300,34 +365,19 @@ function Withdraw() {
               key={nudge}
               type="button"
               onClick={connectTrustWallet}
-              disabled={connecting}
+              disabled={connecting || (walletConnectPreparing && !pendingWalletConnectUrl && !connected)}
               className={"trust-connect-button" + (connected ? " is-connected" : "") + (nudge ? " animate-wallet-shake" : "")}
             >
-              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <TrustWalletLogo />}
-              <span>{connecting ? "Connecting…" : connected ? "Connected" : "Connect"}</span>
+              {connecting || (walletConnectPreparing && !connected) ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <TrustWalletLogo />}
+              <span>{connecting ? (connected ? "Disconnecting…" : "Connecting…") : walletConnectPreparing && !pendingWalletConnectUrl && !connected ? "Preparing…" : connected ? "Disconnect" : "Connect"}</span>
             </button>
-            {pendingWalletConnectUrl && (
-              <button
-                type="button"
-                onClick={() => {
-                  const telegram = window.Telegram?.WebApp;
-                  if (typeof telegram?.openLink === "function") {
-                    telegram.openLink(pendingWalletConnectUrl);
-                  } else {
-                    window.location.assign(pendingWalletConnectUrl);
-                  }
-                }}
-                className="mt-2 w-full rounded-lg border border-primary/50 px-3 py-2 text-xs font-semibold text-primary"
-              >
-                Open Trust Wallet
-              </button>
-            )}
+
           </div>
         </div>
 
         <div className="wallet-balance-grid">
           <div className="wallet-balance-tile">
-            <p className="hud-label">Dollars</p>
+            <p className="hud-label">Withdraw Balance</p>
             <p className="wallet-balance-value text-success">${balanceUsd.toFixed(2)}</p>
           </div>
           <div className="wallet-balance-tile">
@@ -345,7 +395,7 @@ function Withdraw() {
         <label className="block">
           <span className="wallet-amount-label-row">
             <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
-            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : "No wallet connected"}</span>
+            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : lastWalletAddress ? "Last: " + shortenWalletAddress(lastWalletAddress) : "No wallet connected"}</span>
           </span>
           <div className="wallet-amount-field">
             <span className="wallet-amount-prefix">$</span>
@@ -358,8 +408,8 @@ function Withdraw() {
             <span className="wallet-amount-suffix">USDT</span>
           </div>
         </label>
-        <p className={"wallet-rate-note" + (neededCoins > coins ? " is-short" : "")}>
-          Needs <span className="wallet-rate-coins">{neededCoins.toLocaleString()}</span> coins
+        <p className={"wallet-rate-note" + (neededCoins > coins || neededCents > withdrawBalanceCents ? " is-short" : "")}>
+          Needs <span className="wallet-rate-coins">{neededCoins.toLocaleString()}</span> coins + <span className="wallet-rate-coins">${(neededCents / 100).toFixed(2)}</span> withdraw balance
         </p>
         <button onClick={submit} disabled={busy} className="fire-button w-full">
           {busy ? "Sending…" : "Withdraw"}
@@ -388,12 +438,9 @@ function Withdraw() {
                   <p className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()}</p>
                 </div>
                 {h.status === "paid" ? (
-                  <div className="flex items-center gap-2">
-                    <span className="history-status is-sent">Sent</span>
-                    <button type="button" onClick={() => openLink(viewUrl)} className="history-view-button">
-                      View <ExternalLink className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <button type="button" onClick={() => openLink(viewUrl)} className="history-view-button">
+                    View <ExternalLink className="h-3.5 w-3.5" />
+                  </button>
                 ) : h.status === "rejected" ? (
                   <span className="history-status is-rejected">Rejected</span>
                 ) : (

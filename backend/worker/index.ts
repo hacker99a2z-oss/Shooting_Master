@@ -14,7 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
-import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback } from "../withdrawal-approval.ts";
+import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -33,10 +33,10 @@ interface Env {
   ADMIN_TELEGRAM_IDS?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
-/** Daily Games goals: games played today → reward in coins (100,000 coins = $1). Mirrors frontend home-rules. */
-const DAILY_GOAL_REWARDS:Record<number,number>={10:3000,20:4000};
+/** Daily Games cash claims are USD cents, credited only to withdraw balance. */
+const DAILY_GOAL_REWARDS_CENTS:Record<number,number>={10:3,20:4};
 function claimedGoalsToday(row:Row):number[]{return row.claimed_goals_date===today()?String(row.claimed_goals??"").split(",").filter(Boolean).map(Number):[];}
-const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
+const DAILY_GAMES_GOAL=100, BONUS_MIN_CENTS=1, BONUS_MAX_CENTS=5;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
 const AD_COOLDOWN_MS=150000,AD_WATCH_COOLDOWN_MS=180000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
@@ -86,7 +86,7 @@ async function playerRow(db:any,tgId:number,tx?:any):Promise<Row|undefined>{
 function view(row:Row){
   const t=today(),sid=seasonId();
   return {tgId:Number(row.tg_id),name:String(row.first_name),username:row.username==null?null:String(row.username),
-    coins:Number(row.coins),seasonCoins:Number(row.season_id)===sid?Number(row.season_coins):0,
+    coins:Number(row.coins),withdrawBalanceCents:Number(row.withdraw_balance_cents??0),seasonCoins:Number(row.season_id)===sid?Number(row.season_coins):0,
     canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
@@ -137,7 +137,7 @@ function prize(rank:number){
   const step=(30*0.5-10)/(30*29/2);
   return Math.max(0,0.5-(rank-1)*step);
 }
-function randomBonus(){return BONUS_MIN_COINS+Math.floor(Math.random()*((BONUS_MAX_COINS-BONUS_MIN_COINS)/100+1))*100;}
+function randomBonusCents(){return BONUS_MIN_CENTS+Math.floor(Math.random()*(BONUS_MAX_CENTS-BONUS_MIN_CENTS+1));}
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
 
 const BSC_CHAIN_ID=56;
@@ -487,7 +487,7 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
   const db=dbFor(env);
   try{
     const outcome=await txRun(db,async(tx)=>{
-      const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
+      const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,balance_cents FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
       const row=selected.rows[0] as Row|undefined;
       if(!row)return {kind:"missing" as const};
       if(String(row.status)!=="pending_approval")return {kind:"handled" as const,status:String(row.status)};
@@ -495,9 +495,9 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
         const at=new Date().toISOString();
         const changed=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Rejected by owner; reserved coins refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[at,parsed.withdrawalId]});
         if(changed.rowsAffected!==1)return {kind:"handled" as const,status:"changed"};
-        const refund=await tx.execute({sql:"UPDATE players SET coins=coins+? WHERE tg_id=?",args:[Number(row.coins),Number(row.tg_id)]});
+        const refund=await tx.execute({sql:"UPDATE players SET coins=coins+?,withdraw_balance_cents=withdraw_balance_cents+? WHERE tg_id=?",args:[Number(row.coins),Number(row.balance_cents??0),Number(row.tg_id)]});
         if(refund.rowsAffected!==1)throw new Error("Could not refund reserved coins");
-        await writePayoutEvent(tx,parsed.withdrawalId,"rejected",{adminTelegramId:adminId,refundCoins:Number(row.coins),at});
+        await writePayoutEvent(tx,parsed.withdrawalId,"rejected",{adminTelegramId:adminId,refundCoins:Number(row.coins),refundBalanceCents:Number(row.balance_cents??0),at});
         return {kind:"rejected" as const,coins:Number(row.coins),usd:Number(row.usd)};
       }
       if(!payoutConfigured(env))return {kind:"blocked" as const,reason:"Automatic payouts are disabled or not fully configured."};
@@ -873,8 +873,8 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
     }
     if(path==="/api/goal/claim"){
-      const target=Number(body.target),reward=DAILY_GOAL_REWARDS[target];
-      if(!reward)return json({error:"Unknown daily goal"},400);
+      const target=Number(body.target),rewardCents=DAILY_GOAL_REWARDS_CENTS[target];
+      if(!rewardCents)return json({error:"Unknown daily goal"},400);
       try{
         const result=await txRun(db,async(tx)=>{
           const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
@@ -882,8 +882,11 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           if(games<target)throw new Error(`Play ${target} games today to claim`);
           const claimed=claimedGoalsToday(p);
           if(claimed.includes(target))throw new Error("Already claimed today");
-          await tx.execute({sql:"UPDATE players SET coins=coins+?,claimed_goals=?,claimed_goals_date=? WHERE tg_id=?",args:[reward,[...claimed,target].join(","),today(),user.id]});
-          return {...view((await playerRow(db,user.id,tx))!),reward};
+          await tx.execute({
+            sql:"UPDATE players SET withdraw_balance_cents=withdraw_balance_cents+?,claimed_goals=?,claimed_goals_date=? WHERE tg_id=?",
+            args:[rewardCents,[...claimed,target].join(","),today(),user.id]
+          });
+          return {...view((await playerRow(db,user.id,tx))!),balanceRewardCents:rewardCents};
         });
         return json(result);
       }catch(e){return json({error:e instanceof Error?e.message:"Claim failed"},400);}
@@ -893,9 +896,13 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         if(p.daily_games_date!==today()||Number(p.daily_games)<DAILY_GAMES_GOAL)throw new Error("Play 100 games today to claim");
         if(p.bonus_claimed_date===today())throw new Error("Daily bonus already claimed");
-        const amount=randomBonus();
-        await tx.execute({sql:"UPDATE players SET coins=coins+?,bonus_claimed_date=? WHERE tg_id=? AND (bonus_claimed_date IS NULL OR bonus_claimed_date<>?)",args:[amount,today(),user.id,today()]});
-        return {...view((await playerRow(db,user.id,tx))!),bonus:amount};
+        const amountCents=randomBonusCents();
+        const claimed=await tx.execute({
+          sql:"UPDATE players SET withdraw_balance_cents=withdraw_balance_cents+?,bonus_claimed_date=? WHERE tg_id=? AND (bonus_claimed_date IS NULL OR bonus_claimed_date<>?)",
+          args:[amountCents,today(),user.id,today()]
+        });
+        if(claimed.rowsAffected!==1)throw new Error("Daily bonus already claimed");
+        return {...view((await playerRow(db,user.id,tx))!),balanceBonusCents:amountCents};
       });
       return json(result);
     }
@@ -909,32 +916,55 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json(rows.rows.map((r:any)=>({...r,coins:Number(r.coins),usd:Number(r.usd)})));
     }
     if(path==="/api/withdrawals/request"){
-      const usd=Math.floor(Number(body.usd)*100)/100,wallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
+      const amounts=withdrawalAmountsFromUsd(body.usd);
+      const wallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
       const isBep20Address=isBep20Destination(wallet);
-      if(body.asset!=="USDT"||body.network!=="BEP20"||!Number.isFinite(usd)||usd<0.02||!isBep20Address)
-        return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
+      if(body.asset!=="USDT"||body.network!=="BEP20"||!amounts||!isBep20Address)
+        return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and an amount with up to two decimal places."},400);
       if(!parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS).length)
-        return json({error:"Withdrawal approval is not configured yet. Please contact support; no coins were deducted."},503);
-      const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
-      await txRun(db,async(tx)=>{
-        const spent=await tx.execute({sql:"UPDATE players SET coins=coins-? WHERE tg_id=? AND coins>=?",args:[coins,user.id,coins]});
-        if(spent.rowsAffected!==1)throw new Error("Not enough coins");
-        await tx.execute({sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at,payout_asset,payout_network,payout_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",args:[withdrawalId,user.id,coins,usd,wallet,"pending_approval",createdAt,"USDT","BEP20",createdAt]});
-        await writePayoutEvent(tx,withdrawalId,"requested",{tgId:user.id,usd,coins,at:createdAt});
+        return json({error:"Withdrawal approval is not configured yet. Please contact support; no coins or balance were deducted."},503);
+      const {usd,usdCents,coins}=amounts;
+      const withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
+      const updatedPlayer=await txRun(db,async(tx)=>{
+        const saved=await tx.execute({sql:"SELECT address,asset,network,chain_id FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
+        const destination=saved.rows[0] as Row|undefined;
+        if(!destination||String(destination.asset)!=="USDT"||String(destination.network)!=="BEP20"||Number(destination.chain_id)!==BSC_CHAIN_ID)
+          throw new Error("Connect Trust Wallet and save your BEP-20 destination before withdrawing");
+        if(String(destination.address).toLowerCase()!==wallet.toLowerCase())
+          throw new Error("Wallet address changed. Reconnect Trust Wallet and try again.");
+        const spent=await tx.execute({
+          sql:"UPDATE players SET coins=coins-?,withdraw_balance_cents=withdraw_balance_cents-? WHERE tg_id=? AND coins>=? AND withdraw_balance_cents>=?",
+          args:[coins,usdCents,user.id,coins,usdCents]
+        });
+        if(spent.rowsAffected!==1)throw new Error("Not enough coins or withdraw balance");
+        await tx.execute({
+          sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at,payout_asset,payout_network,payout_updated_at,balance_cents) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          args:[withdrawalId,user.id,coins,usd,wallet,"pending_approval",createdAt,"USDT","BEP20",createdAt,usdCents]
+        });
+        await writePayoutEvent(tx,withdrawalId,"requested",{tgId:user.id,usd,usdCents,coins,at:createdAt});
+        const player=await playerRow(db,user.id,tx);
+        if(!player)throw new Error("Player not found");
+        return view(player);
       });
       const notified=await notifyWithdrawalAdmins(env,{id:withdrawalId,tgId:user.id,name:user.firstName,username:user.username,usd,coins,wallet,createdAt});
       if(!notified){
         await txRun(db,async(tx)=>{
-          const cancelled=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Admin notification failed; reserved coins refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[new Date().toISOString(),withdrawalId]});
+          const cancelled=await tx.execute({
+            sql:"UPDATE withdrawals SET status='rejected',payout_error='Admin notification failed; reserved coins and withdraw balance refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",
+            args:[new Date().toISOString(),withdrawalId]
+          });
           if(cancelled.rowsAffected===1){
-            const refund=await tx.execute({sql:"UPDATE players SET coins=coins+? WHERE tg_id=?",args:[coins,user.id]});
-            if(refund.rowsAffected!==1)throw new Error("Could not refund coins after failed admin notification");
-            await writePayoutEvent(tx,withdrawalId,"notification_failed",{tgId:user.id,refundCoins:coins,at:new Date().toISOString()});
+            const refund=await tx.execute({
+              sql:"UPDATE players SET coins=coins+?,withdraw_balance_cents=withdraw_balance_cents+? WHERE tg_id=?",
+              args:[coins,usdCents,user.id]
+            });
+            if(refund.rowsAffected!==1)throw new Error("Could not refund withdrawal after failed admin notification");
+            await writePayoutEvent(tx,withdrawalId,"notification_failed",{tgId:user.id,refundCoins:coins,refundBalanceCents:usdCents,at:new Date().toISOString()});
           }
         });
-        return json({error:"The owner could not be notified. Your coins were returned. Open the Shooting Master bot and press Start, then try again."},503);
+        return json({error:"The owner could not be notified. Your coins and withdraw balance were returned. Open the Shooting Master bot and press Start, then try again."},503);
       }
-      return json({ok:true,id:withdrawalId,status:"pending_approval",automatic:false});
+      return json({ok:true,id:withdrawalId,status:"pending_approval",automatic:false,player:updatedPlayer});
     }
     return json({error:"Not found"},404);
   }catch(e){
