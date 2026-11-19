@@ -222,8 +222,8 @@ const port = Number(process.env.PORT || 10000);
 const server = createServer((request, response) => void handle(request, response));
 // Render's edge proxy can reuse keep-alive connections. Keep Node's idle socket
 // timeout comfortably above the proxy's request window to avoid intermittent resets.
-server.keepAliveTimeout = 65_000;
-server.headersTimeout = 66_000;
+server.keepAliveTimeout = 120_000;
+server.headersTimeout = 121_000;
 
 // Render Free has no separate Background Worker or Cron service. Poll while
 // this Web Service is awake; incoming API requests also trigger immediate drains.
