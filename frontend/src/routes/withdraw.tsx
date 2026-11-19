@@ -9,7 +9,7 @@ import { getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestin
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
-import { coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { checkWithdrawalEligibility, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, disconnectTrustWalletProvider, prepareTrustWalletSession, restoreTrustWalletSession } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
@@ -147,6 +147,13 @@ function Withdraw() {
   const amount = Number(usd);
   const neededCents = withdrawalCentsForUsd(amount);
   const neededCoins = coinsForWithdrawUsd(amount);
+  const eligibility = checkWithdrawalEligibility({
+    usd: amount,
+    minimumUsd: MIN_WITHDRAW_USD,
+    withdrawBalanceCents,
+    coins,
+    walletConnected: connected && Boolean(walletProvider) && walletAddress.toLowerCase() === lastWalletAddress.toLowerCase(),
+  });
 
   // Restore the server-saved address and approved wallet session. Prepare a fresh mobile
   // WalletConnect URI ahead of the user's tap so the Connect tap opens Trust Wallet directly.
@@ -318,12 +325,12 @@ function Withdraw() {
       remindConnect();
       return;
     }
-    if (!Number.isFinite(amount) || amount < MIN_WITHDRAW_USD || neededCents < 2) {
-      toast.error(`Minimum withdrawal is $${MIN_WITHDRAW_USD}.`);
-      return;
-    }
-    if (neededCoins > coins || neededCents > withdrawBalanceCents) {
-      toast.error(neededCoins > coins ? "Not enough coins for this amount." : "Not enough withdraw balance for this amount.");
+    if (!eligibility.canWithdraw) {
+      if (eligibility.reason === "wallet_not_connected") {
+        remindConnect();
+      } else {
+        toast.error(eligibility.message);
+      }
       return;
     }
 
@@ -408,10 +415,13 @@ function Withdraw() {
             <span className="wallet-amount-suffix">USDT</span>
           </div>
         </label>
-        <p className={"wallet-rate-note" + (neededCoins > coins || neededCents > withdrawBalanceCents ? " is-short" : "")}>
+        <p className={"wallet-rate-note" + (eligibility.canWithdraw ? "" : " is-short")}>
           Needs <span className="wallet-rate-coins">{neededCoins.toLocaleString()}</span> coins + <span className="wallet-rate-coins">${(neededCents / 100).toFixed(2)}</span> withdraw balance
         </p>
-        <button onClick={submit} disabled={busy} className="fire-button w-full">
+        <p className={"mt-2 text-xs " + (eligibility.canWithdraw ? "text-success" : "text-destructive")} role="status" aria-live="polite">
+          {eligibility.message}
+        </p>
+        <button onClick={submit} disabled={busy || !eligibility.canWithdraw} className="fire-button w-full" aria-disabled={busy || !eligibility.canWithdraw}>
           {busy ? "Sending…" : "Withdraw"}
         </button>
       </section>

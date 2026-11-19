@@ -33,3 +33,64 @@ export function withdrawalStatusLabel(status: string): string {
     default: return "Pending";
   }
 }
+
+export type WithdrawalEligibilityReason =
+  | "below_minimum"
+  | "invalid_amount"
+  | "invalid_precision"
+  | "insufficient_balance"
+  | "insufficient_coins"
+  | "wallet_not_connected"
+  | "ready";
+
+export type WithdrawalEligibility = {
+  canWithdraw: boolean;
+  reason: WithdrawalEligibilityReason;
+  message: string;
+  requiredCents: number;
+  requiredCoins: number;
+};
+
+/** Check the requested amount in order: minimum, withdraw balance, Coins, then wallet. */
+export function checkWithdrawalEligibility(input: {
+  usd: number;
+  minimumUsd: number;
+  withdrawBalanceCents: number;
+  coins: number;
+  walletConnected: boolean;
+}): WithdrawalEligibility {
+  const { usd, minimumUsd, withdrawBalanceCents, coins, walletConnected } = input;
+  const requiredCents = withdrawalCentsForUsd(usd);
+  const requiredCoins = coinsForWithdrawUsd(usd);
+
+  let reason: WithdrawalEligibilityReason = "ready";
+  let message = "Ready to withdraw.";
+
+  if (!Number.isFinite(usd) || usd <= 0) {
+    reason = "invalid_amount";
+    message = "Enter a valid withdrawal amount.";
+  } else if (usd < minimumUsd) {
+    reason = "below_minimum";
+    message = `Minimum withdrawal is $${minimumUsd.toFixed(2)}.`;
+  } else if (requiredCents < 1) {
+    reason = "invalid_precision";
+    message = "Enter an amount using up to 2 decimal places.";
+  } else if (requiredCents > withdrawBalanceCents) {
+    reason = "insufficient_balance";
+    message = "Not enough Withdraw Balance for this amount.";
+  } else if (requiredCoins > coins) {
+    reason = "insufficient_coins";
+    message = "Not enough Coins for this amount.";
+  } else if (!walletConnected) {
+    reason = "wallet_not_connected";
+    message = "Connect Trust Wallet to continue.";
+  }
+
+  return {
+    canWithdraw: reason === "ready",
+    reason,
+    message,
+    requiredCents,
+    requiredCoins,
+  };
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
-import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
+import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, checkWithdrawalEligibility, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
 import { shortenWalletAddress } from "@/lib/wallet-rules";
 
@@ -16,6 +16,46 @@ describe("withdraw rules", () => {
     expect(withdrawalCentsForUsd(0.021)).toBe(0);
   });
   it("coins scale with the amount", () => expect(coinsForWithdrawUsd(0.5)).toBe(50000));
+
+  it("checks minimum amount before either available balance", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.01, minimumUsd: 0.02, withdrawBalanceCents: 100, coins: 100000, walletConnected: true,
+    });
+    expect(result.canWithdraw).toBe(false);
+    expect(result.reason).toBe("below_minimum");
+  });
+
+  it("checks withdraw balance before checking Coins", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
+    });
+    expect(result.reason).toBe("insufficient_balance");
+    expect(result.canWithdraw).toBe(false);
+  });
+
+  it("checks Coins after withdraw balance is sufficient", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1999, walletConnected: true,
+    });
+    expect(result.reason).toBe("insufficient_coins");
+    expect(result.canWithdraw).toBe(false);
+  });
+
+  it("enables Withdraw only when minimum, balance, Coins and wallet all pass", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 2000, walletConnected: true,
+    });
+    expect(result.canWithdraw).toBe(true);
+    expect(result.reason).toBe("ready");
+  });
+
+  it("requires a connected wallet after amount and balances pass", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 2000, walletConnected: false,
+    });
+    expect(result.reason).toBe("wallet_not_connected");
+  });
+
   it("history shows the last 5 withdrawals", () => expect(HISTORY_LIMIT).toBe(5));
   it("stays pending until paid", () => {
     expect(isPendingWithdrawal("pending_review")).toBe(true);
