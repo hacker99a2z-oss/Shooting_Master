@@ -3,6 +3,7 @@ import {
   createPublicClient,
   createWalletClient,
   encodeFunctionData,
+  formatUnits,
   http,
   keccak256,
   parseEventLogs,
@@ -12,6 +13,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
+import { assessBep20PayoutBalances } from "../payout-preflight.ts";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
@@ -195,6 +197,63 @@ function amountForUsd(usd:number){
   if(!Number.isFinite(usd)||usd<0.02||usd>AUTO_PAYOUT_MAX_USD)throw new PayoutSafetyError("Amount is outside the automatic payout limit.");
   return parseUnits(usd.toFixed(2),18);
 }
+
+function assertTreasuryBalances(input:{
+  tokenBalance:bigint;gasBalance:bigint;amount:bigint;gasPrice:bigint;estimatedGas:bigint;
+}){
+  const result=assessBep20PayoutBalances({
+    ...input,
+    maxGasPrice:MAX_BSC_GAS_PRICE,
+    maxGasLimit:MAX_BSC_GAS_LIMIT,
+  });
+  if(!result.ok){
+    if(result.reason==="insufficient_usdt"){
+      throw new PayoutSafetyError("Treasury USDT balance is "+formatUnits(input.tokenBalance,18)+" USDT; this payout needs "+formatUnits(input.amount,18)+" USDT.");
+    }
+    if(result.reason==="gas_price_high"){
+      throw new PayoutSafetyError("BNB gas price is above the automatic payout safety limit.");
+    }
+    if(result.reason==="gas_limit_high"){
+      throw new PayoutSafetyError("Estimated gas exceeds the automatic payout safety limit.");
+    }
+    if(result.reason==="insufficient_bnb"){
+      const shortfall=result.requiredGasBalance-input.gasBalance;
+      throw new PayoutSafetyError("Treasury BNB is short by "+formatUnits(shortfall,18)+" BNB for the required gas reserve.");
+    }
+    throw new PayoutSafetyError("Treasury gas estimate could not be verified.");
+  }
+  return result;
+}
+
+async function preflightBep20Payout(env:Env,usd:number,recipient:string){
+  if(!/^0x[a-fA-F0-9]{40}$/.test(recipient))throw new PayoutSafetyError("Invalid payout recipient address.");
+  const amount=amountForUsd(usd);
+  const {account,publicClient}=makePayoutClients(env);
+  const chainId=await publicClient.getChainId();
+  if(chainId!==BSC_CHAIN_ID)throw new PayoutSafetyError("Configured RPC is not BNB Smart Chain mainnet.");
+  const token=USDT_BEP20_CONTRACT;
+  const [symbol,decimals,tokenBalance,gasBalance,gasPrice]=await Promise.all([
+    publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"symbol"}),
+    publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"decimals"}),
+    publicClient.readContract({address:token,abi:TRANSFER_ABI,functionName:"balanceOf",args:[account.address]}),
+    publicClient.getBalance({address:account.address}),
+    publicClient.getGasPrice(),
+  ]);
+  if(symbol!=="USDT"||Number(decimals)!==18)throw new PayoutSafetyError("Configured BSC token does not match the expected USDT contract and 18 decimals.");
+  if(tokenBalance<amount){
+    throw new PayoutSafetyError("Treasury USDT is short by "+formatUnits(amount-tokenBalance,18)+" USDT for this request.");
+  }
+  const data=encodeFunctionData({abi:TRANSFER_ABI,functionName:"transfer",args:[recipient as Address,amount]});
+  const estimatedGas=await publicClient.estimateGas({account:account.address,to:token,data});
+  const assessment=assertTreasuryBalances({tokenBalance,gasBalance,amount,gasPrice,estimatedGas});
+  return {
+    usdtBalance:formatUnits(tokenBalance,18),
+    usdtRequired:formatUnits(amount,18),
+    bnbBalance:formatUnits(gasBalance,18),
+    estimatedFee:formatUnits(assessment.gasLimit*gasPrice,18),
+    bnbSafetyReserve:formatUnits(assessment.requiredGasBalance,18),
+  };
+}
 async function writePayoutEvent(db:any,id:string,eventType:string,payload:Row){
   await db.execute({
     sql:"INSERT OR IGNORE INTO payout_events (withdrawal_id,event_type,payload,created_at) VALUES (?,?,?,?)",
@@ -209,6 +268,7 @@ async function setPayoutForReview(db:any,id:string,reason:string){
     args:[safeReason,at,id]
   });
   await writePayoutEvent(db,id,"failed_review",{reason:safeReason,at});
+  console.error("[payout] manual review required",{withdrawalId:id,reason:safeReason});
 }
 // Public payout announcements: the channel comes from PAYOUT_CHANNEL_ID (@name or -100…)
 // or, when unset, from the public OFFICIAL_CHANNEL_URL (https://t.me/name).
@@ -361,13 +421,10 @@ async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
       publicClient.getGasPrice(),
       publicClient.getTransactionCount({address:account.address,blockTag:"pending"})
     ]);
-    if(tokenBalance<amount)throw new PayoutSafetyError("Treasury USDT balance is insufficient for this payout.");
-    if(gasPrice>MAX_BSC_GAS_PRICE)throw new PayoutSafetyError("BNB gas price is above the automatic payout safety limit.");
     const data=encodeFunctionData({abi:TRANSFER_ABI,functionName:"transfer",args:[recipient,amount]});
     const estimate=await publicClient.estimateGas({account:account.address,to:token,data});
-    const gas=estimate*120n/100n;
-    if(gas>MAX_BSC_GAS_LIMIT)throw new PayoutSafetyError("Estimated gas exceeds the automatic payout safety limit.");
-    if(gasBalance<gas*gasPrice*2n)throw new PayoutSafetyError("Treasury BNB balance is too low; keep at least twice the estimated fee for gas.");
+    const balanceCheck=assertTreasuryBalances({tokenBalance,gasBalance,amount,gasPrice,estimatedGas:estimate});
+    const gas=balanceCheck.gasLimit;
     rawTx=await walletClient.signTransaction({account,chain:bsc,to:token,data,gas,gasPrice,nonce});
     txHash=keccak256(rawTx);
     const now=new Date().toISOString();
@@ -494,6 +551,28 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
 
   const db=dbFor(env);
   try{
+    if(parsed.action==="approve"){
+      const candidate=await db.execute({
+        sql:"SELECT usd,wallet,status FROM withdrawals WHERE id=? LIMIT 1",
+        args:[parsed.withdrawalId]
+      });
+      const row=candidate.rows[0] as Row|undefined;
+      if(row&&String(row.status)==="pending_approval"){
+        try{
+          const preflight=await preflightBep20Payout(env,Number(row.usd),String(row.wallet));
+          await notify(
+            "Treasury check passed: "+preflight.usdtBalance+" USDT available; "+preflight.bnbBalance+" BNB available. Queueing payout.",
+            false
+          );
+        }catch(error){
+          const reason=error instanceof PayoutSafetyError
+            ?error.message
+            :"Could not verify the treasury wallet on BNB Smart Chain. Check BSC_RPC_URL and try again.";
+          await notify(("Preflight blocked: "+reason+" No payment was queued.").slice(0,195),true);
+          return json({ok:true,disposition:"preflight_blocked"});
+        }
+      }
+    }
     const outcome=await txRun(db,async(tx)=>{
       const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,balance_cents FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
       const row=selected.rows[0] as Row|undefined;
