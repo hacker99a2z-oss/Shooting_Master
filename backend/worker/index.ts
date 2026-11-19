@@ -15,6 +15,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { assessBep20PayoutBalances } from "../payout-preflight.ts";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
+import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible } from "../game-access.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 
@@ -39,8 +40,8 @@ const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GOAL_REWARDS_CENTS:Record<number,number>={10:3,20:4};
 function claimedGoalsToday(row:Row):number[]{return row.claimed_goals_date===today()?String(row.claimed_goals??"").split(",").filter(Boolean).map(Number):[];}
 const DAILY_GAMES_GOAL=100, BONUS_MIN_CENTS=1, BONUS_MAX_CENTS=5;
-const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=150000,AD_WATCH_COOLDOWN_MS=180000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
+const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10;
+const AD_COOLDOWN_MS=150000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=300000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -1020,13 +1021,12 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         const now=Date.now();
+        if(dailyFreePlayAvailable(p.last_play_date,today()))
+          throw new Error("Play your one daily free game first. Ads unlock after that.");
         const selected=await tx.execute({sql:"SELECT status,expires_at FROM ad_sessions WHERE id=? AND tg_id=?",args:[adSessionId,user.id]});
         const ad=selected.rows[0] as Row|undefined;
         if(!ad)throw new Error("Ad session not found");
-        if(Number(ad.expires_at)<now)throw new Error("Ad session expired. Please request a new ad.");
-        if(p.last_play_date!==today())throw new Error("Play your one daily free game first. Ads unlock after that.");
-        const status=String(ad.status);
-        if(status!=="rewarded")
+        if(!rewardedAdSessionEligible(ad.status,ad.expires_at,now))
           throw new Error("Waiting for AdsGram server reward callback. The game cannot start until the reward is verified.");
         const active=await tx.execute({sql:"SELECT id,enemy_total,expires_at,ad_session_id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1",args:[user.id,now]});
         if(active.rows.length){
@@ -1041,14 +1041,10 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         if(usedAd.rows.length)throw new Error("This verified AdsGram reward has already been used.");
         if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>now)
           throw new Error("Next ad unlocks soon — please wait");
-        const spent=await tx.execute({sql:"UPDATE players SET extra_plays=extra_plays-1 WHERE tg_id=? AND extra_plays>0",args:[user.id]});
-        if(spent.rowsAffected!==1)
-          throw new Error("Verified AdsGram play is no longer available. Please refresh.");
-        const usesExtra=1,linkedAdSessionId=adSessionId;
         const gameId=crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
-        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,ad_session_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,usesExtra,linkedAdSessionId,now,expiresAt]});
+        await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,ad_session_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,1,adSessionId,now,expiresAt]});
         return {gameId,enemyTotal,expiresAt};
       });
       return json(result);
@@ -1083,13 +1079,25 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json(result);
     }
     if(path==="/api/game/start"){
-      // Every tap on Play starts a match (no daily limit for now). An unfinished earlier
-      // match (app closed mid-round) is closed without coins so it never blocks the next one.
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         const now=Date.now();
-        await tx.execute({sql:"UPDATE game_sessions SET consumed_at=?,pending_score=NULL,pending_kills=NULL WHERE tg_id=? AND consumed_at IS NULL AND uses_extra_play=0",args:[now,user.id]});
-        await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=?",args:[today(),user.id]});
+        const active=await tx.execute({
+          sql:"SELECT id,enemy_total,expires_at,ad_session_id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1",
+          args:[user.id,now]
+        });
+        if(active.rows.length){
+          const existing=active.rows[0] as Row;
+          return {gameId:String(existing.id),enemyTotal:Number(existing.enemy_total),expiresAt:Number(existing.expires_at)};
+        }
+        if(!dailyFreePlayAvailable(p.last_play_date,today()))
+          throw new Error("Your one free game for today has been used. Return home and tap Watch Ads to Play.");
+        const reserved=await tx.execute({
+          sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",
+          args:[today(),user.id,today()]
+        });
+        if(reserved.rowsAffected!==1)
+          throw new Error("Your one free game for today has already been used. Watch Ads to Play.");
         const gameId=crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
@@ -1109,7 +1117,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         // Waves come out one after another, so a real match can't be cleared faster than this.
         if(kills>0&&Date.now()-Number(session.created_at)<kills*MIN_MS_PER_KILL)throw new Error("Game result is not valid");
         if(session.pending_score!=null||session.pending_kills!=null)throw new Error("Game result is already waiting for ad verification");
-        if(Number(session.uses_extra_play)===2){
+        if(Number(session.uses_extra_play)>0){
           const ad=await tx.execute({sql:"SELECT status FROM ad_sessions WHERE id=? AND tg_id=?",args:[String(session.ad_session_id),user.id]});
           if(String(ad.rows[0]?.status)!=="rewarded"){
             await tx.execute({sql:"UPDATE game_sessions SET pending_score=?,pending_kills=? WHERE id=? AND tg_id=? AND consumed_at IS NULL",args:[score,kills,id,user.id]});
@@ -1127,21 +1135,34 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         const now=Date.now();
+        if(dailyFreePlayAvailable(p.last_play_date,today()))
+          throw new Error("Play your one free game today first. Ads unlock after that.");
         const adReadyAt=p.ad_ready_at==null?0:Number(p.ad_ready_at);
-        console.info("[AdsGram] ad start eligibility", { adReadyAt, rewardSecretConfigured:Boolean(env.ADSGRAM_REWARD_SECRET) });
         if(adReadyAt>now)throw new Error("Next ad unlocks soon — please wait");
+        const activeGame=await tx.execute({
+          sql:"SELECT id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",
+          args:[user.id,now]
+        });
+        if(activeGame.rows.length)throw new Error("Finish your current game before requesting another ad.");
         await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
-        const pending=await tx.execute({sql:"SELECT COUNT(*) AS total FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>?",args:[user.id,now]});
-        // Reserve a maximum of MAX_EXTRA_PLAYS across verified plays plus in-flight
-        // ad sessions. A missing/delayed postback must not hard-lock the next ad after one view.
-        const pendingCount=Number(pending.rows[0]?.total??0);
-        console.info("[AdsGram] ad start pending sessions", { pendingCount, maxPending:MAX_EXTRA_PLAYS });
-        if(pendingCount>=MAX_EXTRA_PLAYS)
-          throw new Error("You have reached the maximum number of pending or verified extra plays. Please wait for server confirmation.");
+        const recovered=await tx.execute({
+          sql:"SELECT s.id,s.expires_at FROM ad_sessions s WHERE s.tg_id=? AND s.status='rewarded' AND s.expires_at>=? AND NOT EXISTS (SELECT 1 FROM game_sessions g WHERE g.ad_session_id=s.id AND g.tg_id=s.tg_id) ORDER BY s.rewarded_at DESC LIMIT 1",
+          args:[user.id,now]
+        });
+        if(recovered.rows.length){
+          const item=recovered.rows[0] as Row;
+          return {adSessionId:String(item.id),expiresAt:Number(item.expires_at),alreadyVerified:true};
+        }
+        const pending=await tx.execute({
+          sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>? ORDER BY created_at ASC LIMIT 1",
+          args:[user.id,now]
+        });
+        if(pending.rows.length)
+          throw new Error("A previous ad attempt is still active. Close it and try Watch Ads to Play again.");
         const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
         console.info("[AdsGram] ad session created", { expiresAt });
-        return {adSessionId,expiresAt};
+        return {adSessionId,expiresAt,alreadyVerified:false};
       });
       return json(result);
     }
@@ -1175,8 +1196,6 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           const marked=await tx.execute({sql:"UPDATE ad_sessions SET status='awaiting_postback' WHERE id=? AND tg_id=? AND status='created' AND expires_at>=?",args:[id,user.id,Date.now()]});
           if(marked.rowsAffected===1){
             status="awaiting_postback";
-            const now=Date.now(),readyAt=now+AD_WATCH_COOLDOWN_MS;
-            await tx.execute({sql:"UPDATE players SET ad_ready_at=CASE WHEN ad_ready_at IS NOT NULL AND ad_ready_at>? THEN ad_ready_at ELSE ? END WHERE tg_id=?",args:[now,readyAt,user.id]});
           }
         }
         if(status!=="awaiting_postback"&&status!=="rewarded")throw new Error("Ad session is not eligible for reward");
@@ -1196,7 +1215,8 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const player=await playerRow(db,user.id);
       if(!player)return json({error:"Player not found"},404);
       const status=String(session.status),expired=Number(session.expires_at)<Date.now()&&status!=="rewarded";
-      return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
+      const rewardPending=activeAdSession(status,session.expires_at,Date.now());
+      return json({...view(player),status,verified:status==="rewarded",rewardPending,expired:expired||status==="expired",cancelled:status==="cancelled"});
     }
     if(path==="/api/goal/claim"){
       const target=Number(body.target),rewardCents=DAILY_GOAL_REWARDS_CENTS[target];
