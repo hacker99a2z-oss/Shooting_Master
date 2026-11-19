@@ -385,7 +385,7 @@ function Match({ session }: { session: MatchSession }) {
   return (
     <div ref={wrapperRef} className="battle-world" aria-label="Battle Arena map">
       <Canvas
-        shadows
+        shadows={QUALITY.low ? "basic" : "percentage"}
         dpr={QUALITY.dpr}
         camera={{ fov: 42, near: 0.5, far: 220, position: [0, 30, 30] }}
         gl={{ antialias: QUALITY.antialias, powerPreference: "high-performance", stencil: false }}
