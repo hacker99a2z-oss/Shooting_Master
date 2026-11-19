@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
+import { arenaPlayButtonLabel, COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 
 describe("home Daily Games goals", () => {
   it("first goal is 10 games and pays $0.03", () => expect(DAILY_GAME_GOALS[0]).toEqual({ target: 10, rewardUsd: 0.03 }));
@@ -26,5 +26,17 @@ describe("daily goal claims", () => {
   });
   it("cannot claim the same goal twice in a day", () => {
     expect(dailyGamesProgress(12, 10, true).canClaim).toBe(false);
+  });
+});
+
+describe("Battle Arena play button", () => {
+  it("shows the daily free play label before the first game", () => {
+    expect(arenaPlayButtonLabel(true)).toBe("Play (Daily 1 time)");
+  });
+  it("requires a rewarded ad after the daily free game is used", () => {
+    expect(arenaPlayButtonLabel(false)).toBe("Watch Ads to Play");
+  });
+  it("shows a busy label while loading or verifying an ad", () => {
+    expect(arenaPlayButtonLabel(false, "Verifying ad…")).toBe("Verifying ad…");
   });
 });

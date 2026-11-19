@@ -1145,24 +1145,36 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         });
         if(activeGame.rows.length)throw new Error("Finish your current game before requesting another ad.");
         await tx.execute({sql:"UPDATE ad_sessions SET status='expired' WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at<=?",args:[user.id,now]});
+
+        // A server-verified reward that was not consumed by a game is recoverable
+        // after app reload. This avoids asking the user to watch a second ad.
         const recovered=await tx.execute({
           sql:"SELECT s.id,s.expires_at FROM ad_sessions s WHERE s.tg_id=? AND s.status='rewarded' AND s.expires_at>=? AND NOT EXISTS (SELECT 1 FROM game_sessions g WHERE g.ad_session_id=s.id AND g.tg_id=s.tg_id) ORDER BY s.rewarded_at DESC LIMIT 1",
           args:[user.id,now]
         });
         if(recovered.rows.length){
           const item=recovered.rows[0] as Row;
-          return {adSessionId:String(item.id),expiresAt:Number(item.expires_at),alreadyVerified:true};
+          return {adSessionId:String(item.id),expiresAt:Number(item.expires_at),alreadyVerified:true,waitingVerification:false};
         }
+
         const pending=await tx.execute({
-          sql:"SELECT id FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>? ORDER BY created_at ASC LIMIT 1",
+          sql:"SELECT id,status,expires_at FROM ad_sessions WHERE tg_id=? AND status IN ('created','awaiting_postback') AND expires_at>? ORDER BY created_at ASC LIMIT 1",
           args:[user.id,now]
         });
-        if(pending.rows.length)
-          throw new Error("A previous ad attempt is still active. Close it and try Watch Ads to Play again.");
+        if(pending.rows.length){
+          const item=pending.rows[0] as Row;
+          if(String(item.status)==="awaiting_postback"){
+            return {adSessionId:String(item.id),expiresAt:Number(item.expires_at),alreadyVerified:false,waitingVerification:true};
+          }
+          // A previous ad was opened but not completed. Retire that attempt before
+          // creating a fresh server session for this new explicit tap.
+          await tx.execute({sql:"UPDATE ad_sessions SET status='cancelled' WHERE id=? AND tg_id=? AND status='created'",args:[String(item.id),user.id]});
+        }
+
         const adSessionId=crypto.randomUUID(),expiresAt=now+AD_TTL_MS;
         await tx.execute({sql:"INSERT INTO ad_sessions (id,tg_id,status,created_at,expires_at) VALUES (?,?,'created',?,?)",args:[adSessionId,user.id,now,expiresAt]});
         console.info("[AdsGram] ad session created", { expiresAt });
-        return {adSessionId,expiresAt,alreadyVerified:false};
+        return {adSessionId,expiresAt,alreadyVerified:false,waitingVerification:false};
       });
       return json(result);
     }

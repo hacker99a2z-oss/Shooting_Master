@@ -419,23 +419,44 @@ const START_TIMEOUT_MS = 8000;
  * with a local 9–12 total, but no coins are saved.
  */
 export function BattleGame() {
+  const qc = useQueryClient();
   const [session, setSession] = useState<MatchSession | null>(null);
+  const [startError, setStartError] = useState("");
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     const seed = newSeed();
     const offline = () => ({ seed, enemyTotal: randomEnemyTotal(), gameId: null });
-    const a = auth();
-    if (!a.initData) {
+    const pending = qc.getQueryData<{gameId:string;enemyTotal:number;expiresAt:number}>(["pending-arena-session"]);
+    if (pending) {
+      qc.removeQueries({ queryKey: ["pending-arena-session"], exact: true });
+      setSession({ seed, enemyTotal: pending.enemyTotal, gameId: pending.gameId });
+      return;
+    }
+    const credentials = auth();
+    if (!credentials.initData) {
       setSession(offline());
       return;
     }
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), START_TIMEOUT_MS));
-    Promise.race([startGame(a), timeout])
-      .then((r) => setSession({ seed, enemyTotal: r.enemyTotal, gameId: r.gameId }))
-      .catch(() => setSession(offline()));
-  }, []);
+    Promise.race([startGame(credentials), timeout])
+      .then((result) => {
+        setSession({ seed, enemyTotal: result.enemyTotal, gameId: result.gameId });
+        void qc.invalidateQueries({ queryKey: ["me"] });
+      })
+      .catch((reason: unknown) => {
+        setStartError(reason instanceof Error ? reason.message : "Your game is not available. Return home and follow the play instructions.");
+      });
+  }, [qc]);
+  if (!session && startError) {
+    return (
+      <div className="battle-world battle-loading flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="battle-loading-text">{startError}</p>
+        <a href="/" className="rounded-xl border border-cyan-300/50 bg-slate-900/70 px-5 py-3 font-bold text-cyan-100">Back to Home</a>
+      </div>
+    );
+  }
   if (!session) {
     return (
       <div className="battle-world battle-loading" aria-label="Getting the match ready">

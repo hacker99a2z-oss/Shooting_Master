@@ -19,3 +19,9 @@ export function dailyGamesProgress(gamesToday: number, target: number, claimedTo
     canClaim: played >= target && !claimedToday,
   };
 }
+
+/** Label for the Home Battle Arena action, based on the server-owned daily free-play flag. */
+export function arenaPlayButtonLabel(canPlayFree: boolean, busyLabel = ""): string {
+  if (busyLabel) return busyLabel;
+  return canPlayFree ? "Play (Daily 1 time)" : "Watch Ads to Play";
+}

@@ -1,15 +1,15 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Gamepad2, Play } from "lucide-react";
+import { Gamepad2, LoaderCircle, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
-import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
+import { arenaPlayButtonLabel, COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 import { COIN_COUNT_DELAY_MS, COIN_COUNT_MS, COIN_GAIN_KEY, countUpValue, type CoinGain } from "@/lib/coin-gain";
 import battleArena from "@/assets/battle-arena.jpg";
-import { claimDailyGoal } from "@/lib/api.functions";
-import { auth, telegramUserPreview } from "@/lib/tg";
+import { cancelAdPlay, claimDailyGoal, getAdPlayStatus, getMe, grantAdPlay, startAdPlay, startGameAfterAd } from "@/lib/api.functions";
+import { auth, showRewardAd, telegramUserPreview } from "@/lib/tg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -59,12 +59,119 @@ function Home() {
   const displayId = me?.tgId ?? telegramUser?.id;
   const initial = (displayName || "?").charAt(0).toUpperCase();
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [playBusy, setPlayBusy] = useState(false);
+  const [playStatus, setPlayStatus] = useState("");
   const [claiming, setClaiming] = useState<number | null>(null);
   const [claimError, setClaimError] = useState("");
   const goals = DAILY_GAME_GOALS.map((g) => ({
     ...dailyGamesProgress(me?.dailyGames ?? 0, g.target, me?.claimedGoals?.includes(g.target) ?? false),
     rewardUsd: g.rewardUsd,
   }));
+  const playArena = async () => {
+    if (playBusy) return;
+    setPlayBusy(true);
+    setPlayStatus("");
+    let adSessionId = "";
+    let adIsShowing = false;
+    let exitCancelSent = false;
+    const cancelIfAppCloses = () => {
+      if (!adSessionId || !adIsShowing || exitCancelSent) return;
+      exitCancelSent = true;
+      void cancelAdPlay({ ...auth(), adSessionId }).catch(() => undefined);
+    };
+    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    try {
+      const credentials = auth();
+      if (!credentials.initData) {
+        await navigate({ to: "/play" });
+        return;
+      }
+
+      // Read authoritative daily play state from the backend before choosing free vs rewarded.
+      const latest = await getMe(credentials);
+      qc.setQueryData(["me"], latest);
+      if (latest.canPlayFree) {
+        await navigate({ to: "/play" });
+        return;
+      }
+
+      setPlayStatus("Preparing rewarded ad…");
+      const ad = await startAdPlay(credentials);
+      adSessionId = ad.adSessionId;
+
+      if (!ad.alreadyVerified && !ad.waitingVerification) {
+        window.addEventListener("pagehide", cancelIfAppCloses);
+        window.addEventListener("beforeunload", cancelIfAppCloses);
+        adIsShowing = true;
+        setPlayStatus("Watch the full ad to unlock your game…");
+        let result;
+        try {
+          result = await showRewardAd();
+        } finally {
+          adIsShowing = false;
+          window.removeEventListener("pagehide", cancelIfAppCloses);
+          window.removeEventListener("beforeunload", cancelIfAppCloses);
+        }
+        if (!result.done || result.error) {
+          throw new Error(result.description || "Please watch the full ad to unlock the game.");
+        }
+
+        setPlayStatus("Waiting for AdsGram server verification…");
+        // Client completion only changes the session to awaiting_postback.
+        // Only AdsGram's Reward URL callback can mark it rewarded.
+        await grantAdPlay({ ...credentials, adSessionId }).catch(() => undefined);
+      } else if (ad.waitingVerification) {
+        setPlayStatus("Checking the previous ad with AdsGram…");
+      } else {
+        setPlayStatus("Starting your verified game…");
+      }
+
+      const deadline = Date.now() + 90_000;
+      let verified = Boolean(ad.alreadyVerified);
+      while (!verified && Date.now() < deadline) {
+        try {
+          const status = await getAdPlayStatus({ ...credentials, adSessionId });
+          if (status.verified) {
+            verified = true;
+            break;
+          }
+          if (status.cancelled || status.expired) {
+            throw new Error("This ad session ended without AdsGram server verification. Tap Watch Ads to Play to start a new attempt.");
+          }
+        } catch (reason) {
+          if (reason instanceof Error && /ended without AdsGram server verification/.test(reason.message)) throw reason;
+          // A transient API/network failure must not cancel a fully watched ad.
+        }
+        await wait(1_200);
+      }
+
+      if (!verified) {
+        // Keep the postback session alive for the documented server callback. A later tap
+        // resumes verification rather than starting another ad or cancelling a full view.
+        adSessionId = "";
+        toast.info("Ad completed. Waiting for AdsGram server confirmation; tap Watch Ads to Play again to check.");
+        return;
+      }
+
+      setPlayStatus("Starting your verified game…");
+      const game = await startGameAfterAd({ ...credentials, adSessionId });
+      qc.setQueryData(["pending-arena-session"], game);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      adSessionId = "";
+      await navigate({ to: "/play" });
+    } catch (reason) {
+      if (adSessionId) await cancelAdPlay({ ...auth(), adSessionId }).catch(() => undefined);
+      toast.error(reason instanceof Error ? reason.message : "Could not start the game.");
+    } finally {
+      adIsShowing = false;
+      window.removeEventListener("pagehide", cancelIfAppCloses);
+      window.removeEventListener("beforeunload", cancelIfAppCloses);
+      setPlayBusy(false);
+      setPlayStatus("");
+    }
+  };
+
   const claim = async (target: number) => {
     setClaiming(target);
     setClaimError("");
@@ -135,10 +242,17 @@ function Home() {
             </span>
           </p>
         </div>
-        <Link to="/play" className="arena-play-button">
-          <Play className="h-5 w-5" fill="currentColor" />
-          <span>Play</span>
-        </Link>
+        <button
+          type="button"
+          className="arena-play-button"
+          onClick={() => void playArena()}
+          disabled={playBusy || !me}
+          aria-live="polite"
+        >
+          {playBusy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" fill="currentColor" />}
+          <span>{arenaPlayButtonLabel(Boolean(me?.canPlayFree), playBusy ? (playStatus || "Starting…") : "")}</span>
+        </button>
+        {playStatus && <p className="arena-play-status" role="status">{playStatus}</p>}
       </section>
 
       <div className="home-stats-row">
