@@ -51,7 +51,7 @@ export type WithdrawalEligibility = {
   requiredCoins: number;
 };
 
-/** Check the requested amount in order: minimum, withdraw balance, Coins, then wallet. */
+/** Check the requested amount in order: minimum, Coins, withdraw balance, then wallet. */
 export function checkWithdrawalEligibility(input: {
   usd: number;
   minimumUsd: number;

@@ -44,6 +44,24 @@ describe("withdraw rules", () => {
     expect(result.canWithdraw).toBe(false);
   });
 
+  it("shows the full Coins requirement for a $0.05 withdrawal even when cash balance is enough", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.05, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 4999, walletConnected: true,
+    });
+    expect(result.reason).toBe("insufficient_coins");
+    expect(result.message).toBe("Need 5,000 coins.");
+    expect(result.requiredCoins).toBe(5000);
+  });
+
+  it("shows the requested withdraw balance when $0.10 is requested with only $0.05 available", () => {
+    const result = checkWithdrawalEligibility({
+      usd: 0.10, minimumUsd: 0.02, withdrawBalanceCents: 5, coins: 10000, walletConnected: true,
+    });
+    expect(result.reason).toBe("insufficient_balance");
+    expect(result.message).toBe("Need 0.10 withdraw balance.");
+  });
+
+
   it("enables Withdraw only when minimum, balance, Coins and wallet all pass", () => {
     const result = checkWithdrawalEligibility({
       usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 2000, walletConnected: true,

@@ -517,11 +517,13 @@ function Withdraw() {
             <span className="wallet-amount-suffix">USDT</span>
           </div>
         </label>
-        {eligibility.reason !== "ready" && (
-          <p className="mt-2 text-xs text-destructive" role="status" aria-live="polite">
-            {eligibility.message}
-          </p>
-        )}
+        <div className="wallet-eligibility-slot" aria-live="polite" aria-atomic="true">
+          {eligibility.message ? (
+            <p className="wallet-eligibility-message" role="status">
+              {eligibility.message}
+            </p>
+          ) : null}
+        </div>
         <button onClick={submit} disabled={busy || !eligibility.canWithdraw} className="fire-button w-full" aria-disabled={busy || !eligibility.canWithdraw}>
           {busy ? "Sending…" : "Withdraw"}
         </button>
