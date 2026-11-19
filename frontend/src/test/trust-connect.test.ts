@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trustAppConnectLink, isPhoneDevice } from "@/lib/trust-connect";
+import { trustAppConnectLink, isPhoneDevice, isTrustWalletInjectedProvider, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 describe("Trust Wallet WalletConnect universal link", () => {
   it("uses the official HTTPS universal link with an encoded WalletConnect URI", () => {
@@ -25,5 +25,33 @@ describe("phone detection", () => {
 
   it("falls back to the user agent for mobile browsers", () => {
     expect(isPhoneDevice(undefined, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe(true);
+  });
+});
+
+describe("Trust Wallet browser extension provider detection", () => {
+  const request = async () => [];
+
+  it("recognizes the documented isTrust flag", () => {
+    expect(isTrustWalletInjectedProvider({ isTrust: true, request })).toBe(true);
+  });
+
+  it("recognizes the documented isTrustWallet flag", () => {
+    expect(isTrustWalletInjectedProvider({ isTrustWallet: true, request })).toBe(true);
+  });
+
+  it("does not accept an unidentified or incomplete injected provider", () => {
+    expect(isTrustWalletInjectedProvider({ request })).toBe(false);
+    expect(isTrustWalletInjectedProvider({ isTrust: true })).toBe(false);
+    expect(isTrustWalletInjectedProvider(null)).toBe(false);
+  });
+
+  it("selects Trust Wallet from a multi-provider Brave window.ethereum array", () => {
+    const otherWallet = { isMetaMask: true, request };
+    const trustWallet = { isTrustWallet: true, request };
+    expect(selectTrustWalletInjectedProvider([otherWallet, trustWallet])).toBe(trustWallet);
+  });
+
+  it("returns null when no Trust Wallet provider is installed", () => {
+    expect(selectTrustWalletInjectedProvider([{ isMetaMask: true, request }])).toBeNull();
   });
 });
