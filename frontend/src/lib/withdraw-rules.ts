@@ -75,12 +75,12 @@ export function checkWithdrawalEligibility(input: {
   } else if (requiredCents < 1) {
     reason = "invalid_precision";
     message = "Enter an amount using up to 2 decimal places.";
-  } else if (requiredCents > withdrawBalanceCents) {
-    reason = "insufficient_balance";
-    message = `Need ${(requiredCents / 100).toFixed(2)} withdraw balance.`;
   } else if (requiredCoins > coins) {
     reason = "insufficient_coins";
     message = `Need ${requiredCoins.toLocaleString()} coins.`;
+  } else if (requiredCents > withdrawBalanceCents) {
+    reason = "insufficient_balance";
+    message = `Need ${(requiredCents / 100).toFixed(2)} withdraw balance.`;
   } else if (!walletConnected) {
     reason = "wallet_not_connected";
     message = "Connect Trust Wallet to continue.";
