@@ -1092,12 +1092,6 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         }
         if(!dailyFreePlayAvailable(p.last_play_date,today()))
           throw new Error("Your one free game for today has been used. Return home and tap Watch Ads to Play.");
-        const reserved=await tx.execute({
-          sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",
-          args:[today(),user.id,today()]
-        });
-        if(reserved.rowsAffected!==1)
-          throw new Error("Your one free game for today has already been used. Watch Ads to Play.");
         const gameId=crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
@@ -1125,6 +1119,14 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
             console.info("[AdsGram] game result waiting for Reward URL verification", { kills, score });
             return {...view(player),reward:0,pendingVerification:true};
           }
+        }
+        if(Number(session.uses_extra_play)===0){
+          const reserved=await tx.execute({
+            sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",
+            args:[today(),user.id,today()]
+          });
+          if(reserved.rowsAffected!==1)
+            throw new Error("Your one free game for today has already been used.");
         }
         return await settleGameResult(db,tx,user.id,session,score,kills);
       });
