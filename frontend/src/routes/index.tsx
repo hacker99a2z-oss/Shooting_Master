@@ -1,10 +1,12 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Gamepad2, Play } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { preloadBattle } from "@/components/battle/preload";
 import { usePlayer } from "@/hooks/use-player";
 import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
+import { COIN_COUNT_DELAY_MS, COIN_COUNT_MS, COIN_GAIN_KEY, countUpValue, type CoinGain } from "@/lib/coin-gain";
 import battleArena from "@/assets/battle-arena.jpg";
 
 export const Route = createFileRoute("/")({
@@ -21,8 +23,34 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+/** After a match: the profile coins roll up from the old balance to the new one, with a "+N" badge. */
+function useCoinGain(coins: number | undefined) {
+  const qc = useQueryClient();
+  const [gain] = useState(() => qc.getQueryData<CoinGain>(COIN_GAIN_KEY) ?? null);
+  const [shown, setShown] = useState<number | null>(gain ? gain.from : null);
+  useEffect(() => {
+    if (!gain) return;
+    qc.removeQueries({ queryKey: COIN_GAIN_KEY });
+    let frame = 0;
+    let last: number | null = null;
+    let elapsed = -COIN_COUNT_DELAY_MS;
+    const tick = (now: number) => {
+      // Advance at most 100 ms per frame so a busy phone still shows the roll instead of a jump.
+      elapsed += last == null ? 0 : Math.min(100, now - last);
+      last = now;
+      setShown(countUpValue(gain.from, gain.to, elapsed));
+      if (elapsed < COIN_COUNT_MS) frame = requestAnimationFrame(tick);
+      else setShown(null);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [gain, qc]);
+  return { value: shown ?? coins, gained: gain?.gained ?? 0, counting: shown !== null };
+}
+
 function Home() {
   const { data: me, error } = usePlayer();
+  const coinView = useCoinGain(me?.coins);
   const initial = (me?.name || "?").charAt(0).toUpperCase();
   const goals = DAILY_GAME_GOALS.map((g) => ({ ...dailyGamesProgress(me?.dailyGames ?? 0, g.target), rewardUsd: g.rewardUsd }));
 
@@ -43,12 +71,17 @@ function Home() {
             <p className="profile-id">ID: {me?.tgId ?? "…"}</p>
           </div>
         </div>
-        <div className="profile-coins">
+        <div className="profile-coins" data-counting={coinView.counting ? "true" : undefined}>
           <p className="hud-label">Coins</p>
-          <p className="profile-coins-value">
+          <p className="profile-coins-value" aria-live="polite">
             <span className="coin-dot" />
-            <span className="text-gold-gradient">{me ? me.coins.toLocaleString() : "…"}</span>
+            <span className="text-gold-gradient">{coinView.value != null ? coinView.value.toLocaleString() : "…"}</span>
           </p>
+          {coinView.gained > 0 && (
+            <span className="profile-coins-gain" aria-hidden="true">
+              +{coinView.gained.toLocaleString()}
+            </span>
+          )}
         </div>
       </section>
 

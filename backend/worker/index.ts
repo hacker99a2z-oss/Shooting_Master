@@ -14,7 +14,6 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
-import { AD_ENERGY_COOLDOWN_MS, DAILY_ENERGY_BONUS, ENERGY_PER_AD, ENERGY_PER_GIVE, MINE_CAPACITY, giveToMine, mineRemainingMs, settleMine, type MineState } from "../mining.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -34,7 +33,7 @@ interface Env {
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
-const AD_COOLDOWN_MS=150000, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
+const AD_COOLDOWN_MS=150000,AD_WATCH_COOLDOWN_MS=180000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -87,19 +86,7 @@ function view(row:Row){
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
     dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t,
-    ...energyView(row)};
-}
-function mineState(row:Row):MineState{
-  return {energy:Number(row.mine_energy??0),updatedAt:row.mine_updated_at==null?0:Number(row.mine_updated_at),pending:Number(row.gold_pending??0)};
-}
-function energyView(row:Row){
-  const now=Date.now(),mine=settleMine(mineState(row),now);
-  return {energy:Number(row.energy??0),gold:Number(row.gold??0),energyBonusClaimedToday:row.energy_bonus_date===today(),
-    mine:{energy:mine.energy,capacity:MINE_CAPACITY,updatedAt:mine.updatedAt,pendingGold:mine.pending,remainingMs:mineRemainingMs(mine,now)},
-    serverNow:now};
-}
-async function saveMine(tx:any,tgId:number,mine:MineState){
-  await tx.execute({sql:"UPDATE players SET mine_energy=?,mine_updated_at=?,gold_pending=? WHERE tg_id=?",args:[mine.energy,mine.updatedAt,mine.pending,tgId]});
+    serverNow:Date.now()};
 }
 async function ensurePlayer(db:any,user:AuthUser,startParam=""){
   let referrer:number|null=null;const m=/^ref_(\d+)$/.exec(startParam);
@@ -508,10 +495,8 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           await settleGameResult(db,tx,tgId,game,Number(game.pending_score),Number(game.pending_kills));
           disposition="coins_settled";
         }else if(!game||Number(game.expires_at)<now){
-          const readyAt=now+AD_ENERGY_COOLDOWN_MS;
-          const credited=await tx.execute({sql:"UPDATE players SET energy=energy+?,ad_ready_at=CASE WHEN ad_ready_at IS NOT NULL AND ad_ready_at>? THEN ad_ready_at ELSE ? END WHERE tg_id=?",args:[ENERGY_PER_AD,now,readyAt,tgId]});
-          if(credited.rowsAffected!==1)throw new Error("Player not found");
-          disposition="energy_added";
+          // Ads are on hold: a verified view with no game attached is recorded only.
+          disposition="verified_no_game";
         }
         return {ok:true as const,duplicate:false,disposition};
       });
@@ -611,14 +596,13 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       return json(result);
     }
     if(path==="/api/game/start"){
+      // Every tap on Play starts a match (no daily limit for now). An unfinished earlier
+      // match (app closed mid-round) is closed without coins so it never blocks the next one.
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
         const now=Date.now();
-        if(p.last_play_date===today())throw new Error("Your daily free game has already been used. Watch an ad after the cooldown to play again.");
-        const active=await tx.execute({sql:"SELECT id FROM game_sessions WHERE tg_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1",args:[user.id,now]});
-        if(active.rows.length)throw new Error("A game is already active");
-        const marked=await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=? AND (last_play_date IS NULL OR last_play_date<>?)",args:[today(),user.id,today()]});
-        if(marked.rowsAffected!==1)throw new Error("Your daily free game has already been used.");
+        await tx.execute({sql:"UPDATE game_sessions SET consumed_at=?,pending_score=NULL,pending_kills=NULL WHERE tg_id=? AND consumed_at IS NULL AND uses_extra_play=0",args:[now,user.id]});
+        await tx.execute({sql:"UPDATE players SET last_play_date=? WHERE tg_id=?",args:[today(),user.id]});
         const gameId=crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
@@ -635,6 +619,8 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         const session=selected.rows[0] as Row|undefined;if(!session)throw new Error("Game session expired or already submitted");
         const total=Number(session.enemy_total);
         if(kills<0||kills>total||(kills>0&&score<kills*COINS_PER_KILL))throw new Error("Game result is not valid");
+        // Waves come out one after another, so a real match can't be cleared faster than this.
+        if(kills>0&&Date.now()-Number(session.created_at)<kills*MIN_MS_PER_KILL)throw new Error("Game result is not valid");
         if(session.pending_score!=null||session.pending_kills!=null)throw new Error("Game result is already waiting for ad verification");
         if(Number(session.uses_extra_play)===2){
           const ad=await tx.execute({sql:"SELECT status FROM ad_sessions WHERE id=? AND tg_id=?",args:[String(session.ad_session_id),user.id]});
@@ -653,7 +639,6 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!env.ADSGRAM_REWARD_SECRET)return json({error:"AdsGram server-side reward verification is not configured. Please contact support."},503);
       const result=await txRun(db,async(tx)=>{
         const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        if(p.energy_bonus_date!==today())throw new Error("Claim your daily bonus first. Ads unlock after that.");
         const now=Date.now();
         const adReadyAt=p.ad_ready_at==null?0:Number(p.ad_ready_at);
         console.info("[AdsGram] ad start eligibility", { adReadyAt, rewardSecretConfigured:Boolean(env.ADSGRAM_REWARD_SECRET) });
@@ -703,7 +688,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           const marked=await tx.execute({sql:"UPDATE ad_sessions SET status='awaiting_postback' WHERE id=? AND tg_id=? AND status='created' AND expires_at>=?",args:[id,user.id,Date.now()]});
           if(marked.rowsAffected===1){
             status="awaiting_postback";
-            const now=Date.now(),readyAt=now+AD_ENERGY_COOLDOWN_MS;
+            const now=Date.now(),readyAt=now+AD_WATCH_COOLDOWN_MS;
             await tx.execute({sql:"UPDATE players SET ad_ready_at=CASE WHEN ad_ready_at IS NOT NULL AND ad_ready_at>? THEN ad_ready_at ELSE ? END WHERE tg_id=?",args:[now,readyAt,user.id]});
           }
         }
@@ -725,37 +710,6 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!player)return json({error:"Player not found"},404);
       const status=String(session.status),expired=Number(session.expires_at)<Date.now()&&status!=="rewarded";
       return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
-    }
-    if(path==="/api/energy/daily"){
-      const result=await txRun(db,async(tx)=>{
-        const t=today();
-        const claimed=await tx.execute({sql:"UPDATE players SET energy=energy+?,energy_bonus_date=? WHERE tg_id=? AND (energy_bonus_date IS NULL OR energy_bonus_date<>?)",args:[DAILY_ENERGY_BONUS,t,user.id,t]});
-        if(claimed.rowsAffected!==1)throw new Error("Daily bonus already claimed today");
-        return {...view((await playerRow(db,user.id,tx))!),bonusEnergy:DAILY_ENERGY_BONUS};
-      });
-      return json(result);
-    }
-    if(path==="/api/mine/give"){
-      const result=await txRun(db,async(tx)=>{
-        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        const now=Date.now();
-        const next=giveToMine(mineState(p),Number(p.energy??0),now);
-        const spent=await tx.execute({sql:"UPDATE players SET energy=energy-? WHERE tg_id=? AND energy>=?",args:[ENERGY_PER_GIVE,user.id,ENERGY_PER_GIVE]});
-        if(spent.rowsAffected!==1)throw new Error("Not enough energy. Watch an ad to get more energy.");
-        await saveMine(tx,user.id,next);
-        return view((await playerRow(db,user.id,tx))!);
-      });
-      return json(result);
-    }
-    if(path==="/api/mine/claim"){
-      const result=await txRun(db,async(tx)=>{
-        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        const mine=settleMine(mineState(p),Date.now());
-        if(mine.pending<1)throw new Error("No gold mined yet. Give energy to your miner first.");
-        await tx.execute({sql:"UPDATE players SET gold=gold+?,gold_pending=0,mine_energy=?,mine_updated_at=? WHERE tg_id=?",args:[mine.pending,mine.energy,mine.updatedAt,user.id]});
-        return {...view((await playerRow(db,user.id,tx))!),claimedGold:mine.pending};
-      });
-      return json(result);
     }
     if(path==="/api/bonus/claim"){
       const result=await txRun(db,async(tx)=>{
@@ -819,7 +773,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   }catch(e){
     const message=e instanceof Error?e.message:String(e);
     console.error("[API error]", { path, name:e instanceof Error?e.name:"UnknownError", message, stack:e instanceof Error?e.stack:undefined });
-    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active|waiting for server confirmation|full|no gold|daily bonus first/i.test(message);
+    const conflict=/not enough|no plays|already|expired|unlock|watch an ad|play 100|maximum|active|waiting for server confirmation|full/i.test(message);
     return json({error:message},conflict?409:400);
   }finally{db.close();}
 }

@@ -1,6 +1,5 @@
 export type Auth = { initData: string; startParam?: string };
-export type Player = { tgId:number; name:string; username:string|null; coins:number; seasonCoins:number; canPlayFree:boolean; extraPlays:number; gamesPlayed:number; bestScore:number; referralCount:number; referralPaidCount:number; photoUrl:string|null; adReadyAt:number; dailyGames:number; bonusClaimedToday:boolean; energy:number; gold:number; energyBonusClaimedToday:boolean; mine:MineView; serverNow:number };
-export type MineView = { energy:number; capacity:number; updatedAt:number; pendingGold:number; remainingMs:number };
+export type Player = { tgId:number; name:string; username:string|null; coins:number; seasonCoins:number; canPlayFree:boolean; extraPlays:number; gamesPlayed:number; bestScore:number; referralCount:number; referralPaidCount:number; photoUrl:string|null; adReadyAt:number; dailyGames:number; bonusClaimedToday:boolean; serverNow:number };
 const API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 async function post<T>(path:string,data:Record<string,unknown>,keepalive=false):Promise<T>{
  const response=await fetch(API_BASE+"/api/"+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data),credentials:"omit",cache:"no-store",keepalive});

@@ -72,13 +72,36 @@ export const ENEMY_SPAWN_TIME = 1.1;
 /** Dead enemies stay this long so the death animation plays. */
 export const ENEMY_CORPSE_TIME = 2;
 export const ENEMY_MIN_SPAWN_DISTANCE = 15;
-/** Enemies alive at once: starts at 3 and grows by one every 20 s, up to 8. */
-export function maxEnemiesAlive(time: number) {
-  return Math.min(8, 3 + Math.floor(time / 20));
+/** Every match has a random 9–12 enemies in total (the server picks the number). */
+export const MIN_MATCH_ENEMIES = 9;
+export const MAX_MATCH_ENEMIES = 12;
+/** Seconds before the first wave and between one wave being cleared and the next arriving. */
+export const FIRST_WAVE_DELAY = 1.2;
+export const WAVE_GAP = 1.5;
+
+/** Random match size between MIN_MATCH_ENEMIES and MAX_MATCH_ENEMIES (used when the server gives none). */
+export function randomEnemyTotal(rand: () => number = Math.random) {
+  return MIN_MATCH_ENEMIES + Math.floor(rand() * (MAX_MATCH_ENEMIES - MIN_MATCH_ENEMIES + 1));
 }
-/** Seconds between spawns: 4 s at start, down to 1.6 s. */
-export function spawnInterval(time: number) {
-  return Math.max(1.6, 4 - time / 40);
+/** Clamps any enemy total into the 9–12 range. */
+export function clampEnemyTotal(n: number) {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return MIN_MATCH_ENEMIES;
+  return Math.max(MIN_MATCH_ENEMIES, Math.min(MAX_MATCH_ENEMIES, v));
+}
+/**
+ * Waves for a match: wave 1 has 1 enemy, wave 2 has 2, wave 3 has 3 ...
+ * the last wave brings whatever is left, so the sizes always add up to the total.
+ */
+export function waveSizes(total: number): number[] {
+  const out: number[] = [];
+  let left = Math.max(0, Math.floor(total));
+  for (let n = 1; left > 0; n++) {
+    const size = Math.min(n, left);
+    out.push(size);
+    left -= size;
+  }
+  return out;
 }
 
 // ---------- Props ----------
@@ -186,6 +209,8 @@ export type BattleEvent =
   | { type: "enemyThrow"; id: number }
   | { type: "enemyHit"; id: number; x: number; z: number }
   | { type: "enemyKilled"; id: number; x: number; z: number; coins: number }
+  | { type: "waveStart"; wave: number; size: number }
+  | { type: "victory" }
   | { type: "heroDied" };
 
 export type Battle = {
@@ -198,7 +223,18 @@ export type Battle = {
   props: Prop[];
   kills: number;
   coins: number;
+  /** Enemies in this whole match (9–12) and how many have come out so far. */
+  enemyTotal: number;
+  spawned: number;
+  /** Wave sizes for the match and the wave now on the map (1-based, 0 = not started). */
+  waves: number[];
+  wave: number;
+  /** Enemies of the current wave still waiting to come out. */
+  waveLeft: number;
+  /** Seconds until the next wave (or the next spawn attempt). */
   spawnTimer: number;
+  /** True when every enemy of the match is dead. */
+  won: boolean;
   nextId: number;
   over: boolean;
   events: BattleEvent[];
@@ -304,7 +340,8 @@ export function generateProps(seed: number): Prop[] {
   return props;
 }
 
-export function createBattle(seed: number): Battle {
+export function createBattle(seed: number, enemyTotal?: number): Battle {
+  const total = enemyTotal == null ? randomEnemyTotal(() => nextRandom({ rng: (seed ^ 0x51ed27) >>> 0 })) : clampEnemyTotal(enemyTotal);
   return {
     time: 0,
     rng: (seed ^ 0x9e3779b9) >>> 0,
@@ -330,7 +367,13 @@ export function createBattle(seed: number): Battle {
     props: generateProps(seed),
     kills: 0,
     coins: 0,
-    spawnTimer: 1.2,
+    enemyTotal: total,
+    spawned: 0,
+    waves: waveSizes(total),
+    wave: 0,
+    waveLeft: 0,
+    spawnTimer: FIRST_WAVE_DELAY,
+    won: false,
     nextId: 1,
     over: false,
     events: [],
@@ -415,7 +458,7 @@ function stepHero(b: Battle, input: BattleInput, dt: number) {
 
 function damageHero(b: Battle, dmg: number) {
   const h = b.hero;
-  if (h.dead) return;
+  if (h.dead || b.won) return;
   // One hit kills (every shot does at least the hero's whole single life).
   h.hp = Math.max(0, h.hp - Math.max(dmg, h.hp));
   h.sinceHit = 0;
@@ -447,6 +490,13 @@ function damageEnemy(b: Battle, e: Enemy, dmg: number) {
     b.kills += 1;
     b.coins += COINS_PER_ENEMY;
     b.events.push({ type: "enemyKilled", id: e.id, x: e.x, z: e.z, coins: COINS_PER_ENEMY });
+    // The last enemy of the match is down: the hero wins and the round ends.
+    if (b.kills >= b.enemyTotal && !b.hero.dead) {
+      b.won = true;
+      b.over = true;
+      b.hero.aiming = false;
+      b.events.push({ type: "victory" });
+    }
   } else {
     b.events.push({ type: "enemyHit", id: e.id, x: e.x, z: e.z });
   }
@@ -634,14 +684,33 @@ function stepShots(b: Battle, dt: number) {
   b.shots = keep;
 }
 
+/** Enemies of the match still alive on the map. */
+export function enemiesAlive(b: Battle) {
+  return b.enemies.filter((e) => e.state !== "dead").length;
+}
+
+/** Waves: the next wave comes only after every enemy of the current one is dead. */
 function stepSpawner(b: Battle, dt: number) {
-  if (b.hero.dead) return;
-  b.spawnTimer -= dt;
-  const alive = b.enemies.filter((e) => e.state !== "dead").length;
-  if (b.spawnTimer <= 0) {
-    b.spawnTimer = spawnInterval(b.time);
-    if (alive < maxEnemiesAlive(b.time)) spawnEnemy(b);
+  if (b.over) return;
+  // The gap before the next wave only starts counting once the current wave is cleared.
+  if (b.waveLeft === 0 && enemiesAlive(b) > 0) {
+    b.spawnTimer = WAVE_GAP;
+    return;
   }
+  b.spawnTimer -= dt;
+  if (b.spawnTimer > 0) return;
+  if (b.waveLeft === 0) {
+    if (b.wave >= b.waves.length) return;
+    b.wave += 1;
+    b.waveLeft = b.waves[b.wave - 1]!;
+    b.events.push({ type: "waveStart", wave: b.wave, size: b.waveLeft });
+  }
+  // Bring the whole wave out (a spawn that finds no free spot tries again shortly).
+  while (b.waveLeft > 0 && spawnEnemy(b)) {
+    b.waveLeft -= 1;
+    b.spawned += 1;
+  }
+  b.spawnTimer = b.waveLeft > 0 ? 0.2 : WAVE_GAP;
 }
 
 /** One fixed order per frame: hero → arrows → enemies → enemy shots → spawner. */

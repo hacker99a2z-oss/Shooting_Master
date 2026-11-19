@@ -8,7 +8,12 @@ import {
   createBattle,
   emptyInput,
   generateProps,
-  maxEnemiesAlive,
+  MAX_MATCH_ENEMIES,
+  MIN_MATCH_ENEMIES,
+  clampEnemyTotal,
+  enemiesAlive,
+  randomEnemyTotal,
+  waveSizes,
   spawnEnemy,
   stepBattle,
   type Battle,
@@ -19,6 +24,7 @@ import { COINS_PER_ENEMY } from "@/lib/home-rules";
 function emptyBattle(): Battle {
   const b = createBattle(1);
   b.props = [];
+  b.waves = [];
   b.spawnTimer = 1e9;
   return b;
 }
@@ -177,14 +183,115 @@ describe("enemies", () => {
     expect(COINS_PER_ENEMY).toBe(10);
   });
 
-  it("spawn over time, starting with 3 at once and never more than 8", () => {
-    expect(maxEnemiesAlive(0)).toBe(3);
-    expect(maxEnemiesAlive(1000)).toBe(8);
-    const b = createBattle(7);
-    run(b, 30);
-    const alive = b.enemies.filter((e) => e.state !== "dead").length;
-    expect(alive).toBeGreaterThan(0);
-    expect(alive).toBeLessThanOrEqual(maxEnemiesAlive(b.time));
+});
+
+/** Run with every enemy holding fire, so the wave checks never lose the hero. */
+function calm(b: Battle, seconds: number) {
+  for (let t = 0; t < seconds; t += 1 / 60) {
+    for (const e of b.enemies) e.cooldown = 99;
+    stepBattle(b, emptyInput(), 1 / 60);
+  }
+}
+/** Kill every enemy now on the map with one arrow each. */
+function killAlive(b: Battle) {
+  for (const e of b.enemies) {
+    if (e.state === "dead") continue;
+    while (e.state === "spawning") calm(b, 0.1);
+    e.x = b.hero.x + 6;
+    e.z = b.hero.z;
+    e.state = "moving";
+    e.cooldown = 99;
+    aimAndRelease(b, e.x, e.z);
+    calm(b, 0.4);
+  }
+}
+/** A match with no props so the waves can be followed exactly. */
+function openMatch(total: number) {
+  const b = createBattle(3, total);
+  b.props = [];
+  return b;
+}
+
+describe("enemies per match", () => {
+  it("every match has a random 9 to 12 enemies", () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 400; i++) {
+      const n = randomEnemyTotal();
+      expect(n).toBeGreaterThanOrEqual(9);
+      expect(n).toBeLessThanOrEqual(12);
+      seen.add(n);
+    }
+    expect([...seen].sort((x, y) => x - y)).toEqual([9, 10, 11, 12]);
+    expect(MIN_MATCH_ENEMIES).toBe(9);
+    expect(MAX_MATCH_ENEMIES).toBe(12);
+    for (let seed = 1; seed < 60; seed++) {
+      const t = createBattle(seed).enemyTotal;
+      expect(t).toBeGreaterThanOrEqual(9);
+      expect(t).toBeLessThanOrEqual(12);
+    }
+  });
+
+  it("uses the server's number and keeps it inside 9 to 12", () => {
+    expect(createBattle(1, 11).enemyTotal).toBe(11);
+    expect(clampEnemyTotal(20)).toBe(12);
+    expect(clampEnemyTotal(2)).toBe(9);
+  });
+
+  it("waves grow 1, 2, 3, 4 ... and the last wave brings what is left", () => {
+    expect(waveSizes(9)).toEqual([1, 2, 3, 3]);
+    expect(waveSizes(10)).toEqual([1, 2, 3, 4]);
+    expect(waveSizes(11)).toEqual([1, 2, 3, 4, 1]);
+    expect(waveSizes(12)).toEqual([1, 2, 3, 4, 2]);
+  });
+
+  it("starts with 1 enemy and sends the next wave only after the current one is killed", () => {
+    const b = openMatch(10);
+    calm(b, 2);
+    expect(enemiesAlive(b)).toBe(1);
+    calm(b, 5);
+    expect(enemiesAlive(b)).toBe(1);
+    killAlive(b);
+    calm(b, 2);
+    expect(b.wave).toBe(2);
+    expect(enemiesAlive(b)).toBe(2);
+    killAlive(b);
+    calm(b, 2);
+    expect(enemiesAlive(b)).toBe(3);
+    killAlive(b);
+    calm(b, 2);
+    expect(enemiesAlive(b)).toBe(4);
+  });
+
+  it("killing the last enemy of the match wins and ends the round, with no more enemies after", () => {
+    for (const total of [9, 10, 11, 12]) {
+      const b = openMatch(total);
+      for (let guard = 0; guard < 20 && !b.over; guard++) {
+        calm(b, 2);
+        killAlive(b);
+      }
+      expect(b.won).toBe(true);
+      expect(b.over).toBe(true);
+      expect(b.kills).toBe(total);
+      expect(b.coins).toBe(total * COINS_PER_ENEMY);
+      calm(b, 5);
+      expect(b.spawned).toBe(total);
+      expect(enemiesAlive(b)).toBe(0);
+    }
+  });
+
+  it("the hero being killed ends the round before the match total is reached", () => {
+    const b = openMatch(12);
+    run(b, 2);
+    const e = b.enemies[0]!;
+    e.x = b.hero.x + 6;
+    e.z = b.hero.z;
+    e.state = "windup";
+    e.timer = 0;
+    run(b, 4);
+    expect(b.hero.dead).toBe(true);
+    expect(b.over).toBe(true);
+    expect(b.won).toBe(false);
+    expect(b.kills).toBe(0);
   });
 });
 

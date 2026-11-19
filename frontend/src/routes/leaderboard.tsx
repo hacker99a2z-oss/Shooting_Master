@@ -10,9 +10,9 @@ import { LEADERBOARD_MIN_COINS, PRIZE_POOL_USD, PRIZE_WINNERS } from "@/lib/rule
 export const Route = createFileRoute("/leaderboard")({
   head: () => ({
     meta: [
-      { title: "Leaderboard — Coin Rush" },
+      { title: "Leaderboard — Shooting Master" },
       { name: "description", content: "Top 30 players share a $10 prize pool every 2 days." },
-      { property: "og:title", content: "Leaderboard — Coin Rush" },
+      { property: "og:title", content: "Leaderboard — Shooting Master" },
       { property: "og:description", content: "Top 30 players share a $10 prize pool every 2 days." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

@@ -1,10 +1,14 @@
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Link } from "@tanstack/react-router";
-import { Home, RotateCcw, Skull } from "lucide-react";
-import { createBattle, emptyInput, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
+import { Home, Skull } from "lucide-react";
+import { createBattle, emptyInput, randomEnemyTotal, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
+import { cancelGame, finishGame, startGame, type Player } from "@/lib/api.functions";
+import { COIN_GAIN_KEY, type CoinGain } from "@/lib/coin-gain";
+import { auth } from "@/lib/tg";
 import { CAMERA_PITCH, cameraDistance, cameraFocusLimit } from "@/lib/battle-camera";
 import { BattleGround, BattleWorld } from "./BattleWorld";
 import { BattleControls, createControls, type ControlState } from "./BattleControls";
@@ -15,7 +19,7 @@ const POOL_PER_KIND = 6;
 const SHOT_POOL = 14;
 const ARROW_POOL = 14;
 
-export type HudState = { kills: number; coins: number; shield: boolean; over: boolean };
+export type HudState = { kills: number; coins: number; total: number; wave: number; shield: boolean; over: boolean; won: boolean };
 
 /** Builds this frame's rules input from the raw controls (pointer ray-cast onto the ground). */
 function readInput(c: ControlState, camera: THREE.Camera, ray: THREE.Raycaster, plane: THREE.Plane, hit: THREE.Vector3, ndc: THREE.Vector2) {
@@ -223,7 +227,15 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     tools.hudTimer -= dt;
     if (tools.hudTimer <= 0) {
       tools.hudTimer = 0.1;
-      const hud: HudState = { kills: battle.kills, coins: battle.coins, shield: h.mode === "shield", over: battle.over };
+      const hud: HudState = {
+        kills: battle.kills,
+        coins: battle.coins,
+        total: battle.enemyTotal,
+        wave: battle.wave,
+        shield: h.mode === "shield",
+        over: battle.over,
+        won: battle.won,
+      };
       const key = JSON.stringify(hud);
       if (key !== lastHud.current) {
         lastHud.current = key;
@@ -252,59 +264,114 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
   );
 }
 
-/** Kills top-left, coins top-right. No health bar: one hit kills. */
+/** Kills (out of this match's total) top-left, coins top-right, and a short "Wave N" banner. No health bar: one hit kills. */
 function Hud({ hud }: { hud: HudState }) {
   return (
-    <div className="battle-hud">
-      <span className="battle-kills" aria-label="Enemies killed">
-        <Skull className="h-4 w-4" />
-        {hud.kills}
-      </span>
-      <span className="battle-coins" aria-label="Coins earned this round">
-        <span className="coin-dot" />
-        <span className="text-gold-gradient">{hud.coins.toLocaleString()}</span>
-      </span>
-    </div>
+    <>
+      <div className="battle-hud">
+        <span className="battle-kills" aria-label="Enemies killed out of this match's total">
+          <Skull className="h-4 w-4" />
+          {hud.kills}/{hud.total}
+        </span>
+        <span className="battle-coins" aria-label="Coins earned this round">
+          <span className="coin-dot" />
+          <span className="text-gold-gradient">{hud.coins.toLocaleString()}</span>
+        </span>
+      </div>
+      {hud.wave > 0 && !hud.over && (
+        <p key={hud.wave} className="battle-wave-banner" aria-live="polite">
+          Wave {hud.wave}
+        </p>
+      )}
+    </>
   );
 }
 
-function GameOver({ hud, onRestart }: { hud: HudState; onRestart: () => void }) {
+export type SaveState = "saving" | "saved" | "offline" | "error";
+
+/** Round over: Victory or Defeated, kills and coins side by side, and only a Home button. */
+function GameOver({ hud, save, error }: { hud: HudState; save: SaveState; error: string }) {
+  const note =
+    save === "saving"
+      ? "Adding coins to your profile…"
+      : save === "saved"
+        ? hud.coins > 0
+          ? "Coins added to your profile"
+          : "No coins this time"
+        : save === "offline"
+          ? "Open the game in Telegram to save your coins"
+          : `Coins could not be saved: ${error}`;
   return (
     <div className="battle-over" role="dialog" aria-label="Round over">
-      <div className="battle-over-card">
-        <p className="battle-over-title">Defeated!</p>
-        <p className="battle-over-stat">
-          <Skull className="h-5 w-5" /> {hud.kills} enemies killed
-        </p>
-        <p className="battle-over-stat">
-          <span className="coin-dot" /> <span className="text-gold-gradient">{hud.coins.toLocaleString()}</span> coins
-        </p>
-        <div className="battle-over-actions">
-          <button type="button" className="battle-over-button battle-over-primary" onClick={onRestart}>
-            <RotateCcw className="h-5 w-5" /> Play again
-          </button>
-          <Link to="/" className="battle-over-button">
-            <Home className="h-5 w-5" /> Home
-          </Link>
+      <div className="battle-over-card" data-result={hud.won ? "victory" : "defeat"}>
+        <p className="battle-over-title">{hud.won ? "Victory!" : "Defeated!"}</p>
+        <p className="battle-over-sub">{hud.won ? `All ${hud.total} enemies killed` : `${hud.kills} of ${hud.total} enemies killed`}</p>
+        <div className="battle-over-stats">
+          <div className="battle-over-stat">
+            <Skull className="battle-over-stat-icon" />
+            <span className="battle-over-stat-value">{hud.kills}</span>
+            <span className="battle-over-stat-label">Kills</span>
+          </div>
+          <div className="battle-over-stat">
+            <span className="coin-dot battle-over-stat-icon" />
+            <span className="battle-over-stat-value text-gold-gradient">+{hud.coins.toLocaleString()}</span>
+            <span className="battle-over-stat-label">Coins</span>
+          </div>
         </div>
+        <p className="battle-over-note" data-state={save}>
+          {note}
+        </p>
+        <Link to="/" className="battle-over-button battle-over-primary">
+          <Home className="h-5 w-5" /> Home
+        </Link>
       </div>
     </div>
   );
 }
 
-function Match({ seed, onRestart }: { seed: number; onRestart: () => void }) {
+type MatchSession = { seed: number; enemyTotal: number; gameId: string | null };
+
+function Match({ session }: { session: MatchSession }) {
+  const { seed, enemyTotal, gameId } = session;
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const battle = useMemo(() => createBattle(seed), [seed]);
+  const qc = useQueryClient();
+  const battle = useMemo(() => createBattle(seed, enemyTotal), [seed, enemyTotal]);
   const controls = useMemo(() => createControls(), []);
-  const [hud, setHud] = useState<HudState>({ kills: 0, coins: 0, shield: false, over: false });
+  const [hud, setHud] = useState<HudState>({ kills: 0, coins: 0, total: battle.enemyTotal, wave: 0, shield: false, over: false, won: false });
   const [overShown, setOverShown] = useState(false);
+  const [save, setSave] = useState<SaveState>(gameId ? "saving" : "offline");
+  const [saveError, setSaveError] = useState("");
+  const finished = useRef(false);
   const markReady = useMemo(() => () => wrapperRef.current?.setAttribute("data-scene-ready", "true"), []);
 
+  // Round over → send the result to the game server; it adds the coins to the profile.
   useEffect(() => {
-    if (!hud.over) return;
+    if (!hud.over || finished.current) return;
+    finished.current = true;
     const t = setTimeout(() => setOverShown(true), 1600);
+    if (!gameId) return () => clearTimeout(t);
+    const before = qc.getQueryData<Player>(["me"])?.coins;
+    finishGame({ ...auth(), gameId, score: battle.coins, kills: battle.kills })
+      .then((p) => {
+        const from = before ?? p.coins - p.reward;
+        if (p.reward > 0) qc.setQueryData<CoinGain>(COIN_GAIN_KEY, { from, to: p.coins, gained: p.reward });
+        qc.setQueryData(["me"], p);
+        setSave("saved");
+      })
+      .catch((e: unknown) => {
+        setSaveError(e instanceof Error ? e.message : "Please try again");
+        setSave("error");
+      });
     return () => clearTimeout(t);
-  }, [hud.over]);
+  }, [hud.over, gameId, battle, qc]);
+
+  // Leaving in the middle of a round closes it on the server without coins.
+  useEffect(
+    () => () => {
+      if (gameId && !finished.current) void cancelGame({ ...auth(), gameId }).catch(() => undefined);
+    },
+    [gameId],
+  );
 
   return (
     <div ref={wrapperRef} className="battle-world" aria-label="Battle Arena map">
@@ -324,15 +391,43 @@ function Match({ seed, onRestart }: { seed: number; onRestart: () => void }) {
       </Canvas>
       <Hud hud={hud} />
       {!hud.over && <BattleControls controls={controls} shieldOn={hud.shield} />}
-      {overShown && <GameOver hud={hud} onRestart={onRestart} />}
+      {overShown && <GameOver hud={hud} save={save} error={saveError} />}
     </div>
   );
 }
 
 const newSeed = () => (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+const START_TIMEOUT_MS = 8000;
 
-/** Battle Arena: a fresh random map and enemies every match. */
+/**
+ * Battle Arena: every Play asks the game server for a new match (its random 9–12 enemy total),
+ * then lays out a fresh random map. Without the server (outside Telegram) the round still plays
+ * with a local 9–12 total, but no coins are saved.
+ */
 export function BattleGame() {
-  const [seed, setSeed] = useState(newSeed);
-  return <Match key={seed} seed={seed} onRestart={() => setSeed(newSeed())} />;
+  const [session, setSession] = useState<MatchSession | null>(null);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    const seed = newSeed();
+    const offline = () => ({ seed, enemyTotal: randomEnemyTotal(), gameId: null });
+    const a = auth();
+    if (!a.initData) {
+      setSession(offline());
+      return;
+    }
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), START_TIMEOUT_MS));
+    Promise.race([startGame(a), timeout])
+      .then((r) => setSession({ seed, enemyTotal: r.enemyTotal, gameId: r.gameId }))
+      .catch(() => setSession(offline()));
+  }, []);
+  if (!session) {
+    return (
+      <div className="battle-world battle-loading" aria-label="Getting the match ready">
+        <p className="battle-loading-text">Getting ready…</p>
+      </div>
+    );
+  }
+  return <Match session={session} />;
 }

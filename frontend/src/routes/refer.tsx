@@ -10,9 +10,9 @@ import { REFERRAL_REWARD, REFERRAL_GAMES_NEEDED } from "@/lib/rules";
 export const Route = createFileRoute("/refer")({
   head: () => ({
     meta: [
-      { title: "Invite Friends — Coin Rush" },
-      { name: "description", content: "Invite friends to Coin Rush and earn bonus coins when they play 10 games." },
-      { property: "og:title", content: "Invite Friends — Coin Rush" },
+      { title: "Invite Friends — Shooting Master" },
+      { name: "description", content: "Invite friends to Shooting Master and earn bonus coins when they play 10 games." },
+      { property: "og:title", content: "Invite Friends — Shooting Master" },
       { property: "og:description", content: "Invite friends and earn bonus coins." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -73,7 +73,7 @@ function Refer() {
   };
 
   const share = () => {
-    const text = `🎮 Play Coin Rush with me and earn coins every day!`;
+    const text = `🎮 Play Shooting Master with me and earn coins every day!`;
     if (link) openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
   };
 
