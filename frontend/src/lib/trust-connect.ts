@@ -137,3 +137,21 @@ export async function disconnectTrustWalletProvider(provider: Provider): Promise
     // Some injected wallets do not implement account permission revocation.
   }
 }
+
+export type InjectedTrustProvider = Provider & {
+  isTrust?: boolean;
+  isTrustWallet?: boolean;
+};
+
+/** Trust Wallet documents both flags for its EIP-1193 browser extension provider. */
+export function isTrustWalletInjectedProvider(value: unknown): value is InjectedTrustProvider {
+  if (!value || typeof value !== "object") return false;
+  const provider = value as Partial<InjectedTrustProvider>;
+  return typeof provider.request === "function" &&
+    (provider.isTrust === true || provider.isTrustWallet === true);
+}
+
+/** Select only a provider positively identified as Trust Wallet from injected providers. */
+export function selectTrustWalletInjectedProvider(candidates: unknown[]): InjectedTrustProvider | null {
+  return candidates.find(isTrustWalletInjectedProvider) ?? null;
+}
