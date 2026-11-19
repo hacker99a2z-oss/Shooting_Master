@@ -41,6 +41,9 @@ jobs:
       - name: Apply Turso schema
         working-directory: backend
         run: npm run db:migrate
+      - name: Apply Render payout queue schema
+        working-directory: backend
+        run: npm run db:migrate:render
       - name: Read-only payout queue audit
         working-directory: backend
         run: node scripts/report-payout-state.mjs
