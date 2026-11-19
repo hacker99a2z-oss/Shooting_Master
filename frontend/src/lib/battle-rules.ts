@@ -7,7 +7,7 @@
  * World axes (metres): x = screen right, z = screen down (toward the camera).
  * Yaw: facing = (sin yaw, cos yaw); yaw 0 faces the camera (+z), yaw π faces up the screen.
  */
-import { COINS_PER_ENEMY } from "@/lib/home-rules";
+import { COINS_PER_ENEMY } from "./home-rules.ts";
 
 // ---------- Map ----------
 /** Playable half size: the hero walks inside x,z ∈ [-MAP_HALF, MAP_HALF]. */
@@ -84,6 +84,14 @@ export function randomEnemyTotal(rand: () => number = Math.random) {
   return MIN_MATCH_ENEMIES + Math.floor(rand() * (MAX_MATCH_ENEMIES - MIN_MATCH_ENEMIES + 1));
 }
 /** Clamps any enemy total into the 9–12 range. */
+/** Seed from the server-issued, unguessable game UUID. */
+export function battleSeedFromGameId(gameId: string) {
+  const uuid = gameId.startsWith("r2_") ? gameId.slice(3) : gameId;
+  const compact = uuid.replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/i.test(compact)) throw new Error("Invalid game session ID");
+  return Number.parseInt(compact.slice(0, 8), 16) >>> 0;
+}
+
 export function clampEnemyTotal(n: number) {
   const v = Math.floor(Number(n));
   if (!Number.isFinite(v)) return MIN_MATCH_ENEMIES;

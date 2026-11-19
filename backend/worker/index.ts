@@ -17,6 +17,7 @@ import { assessBep20PayoutBalances } from "../payout-preflight.ts";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible, nextAdReadyAt } from "../game-access.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
+import { verifyBattleReplay } from "../game-replay.ts";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 
 interface Env {
@@ -1035,7 +1036,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
           const existing=active.rows[0] as Row;
           if(String(existing.ad_session_id??"")===adSessionId){
             console.info("[AdsGram] verified game start reused existing session");
-            return {gameId:String(existing.id),enemyTotal:Number(existing.enemy_total),expiresAt:Number(existing.expires_at)};
+            return {gameId:String(existing.id),enemyTotal:Number(existing.enemy_total),expiresAt:Number(existing.expires_at),replayRequired:String(existing.id).startsWith("r2_")};
           }
           throw new Error("A game is already active");
         }
@@ -1043,11 +1044,11 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         if(usedAd.rows.length)throw new Error("This verified AdsGram reward has already been used.");
         if(p.ad_ready_at!=null&&Number(p.ad_ready_at)>now)
           throw new Error("Next ad unlocks soon — please wait");
-        const gameId=crypto.randomUUID();
+        const gameId="r2_"+crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
         await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,ad_session_id,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,1,adSessionId,now,expiresAt]});
-        return {gameId,enemyTotal,expiresAt};
+        return {gameId,enemyTotal,expiresAt,replayRequired:true};
       });
       return json(result);
     }
@@ -1090,28 +1091,37 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         });
         if(active.rows.length){
           const existing=active.rows[0] as Row;
-          return {gameId:String(existing.id),enemyTotal:Number(existing.enemy_total),expiresAt:Number(existing.expires_at)};
+          return {gameId:String(existing.id),enemyTotal:Number(existing.enemy_total),expiresAt:Number(existing.expires_at),replayRequired:String(existing.id).startsWith("r2_")};
         }
         if(!dailyFreePlayAvailable(p.last_play_date,today()))
           throw new Error("Your one free game for today has been used. Return home and tap Watch Ads to Play.");
-        const gameId=crypto.randomUUID();
+        const gameId="r2_"+crypto.randomUUID();
         const enemyTotal=MIN_ENEMIES+(crypto.getRandomValues(new Uint32Array(1))[0]!%(MAX_ENEMIES-MIN_ENEMIES+1));
         const expiresAt=now+GAME_TTL_MS;
         await tx.execute({sql:"INSERT INTO game_sessions (id,tg_id,enemy_total,uses_extra_play,created_at,expires_at) VALUES (?,?,?,?,?,?)",args:[gameId,user.id,enemyTotal,0,now,expiresAt]});
-        return {gameId,enemyTotal,expiresAt};
+        return {gameId,enemyTotal,expiresAt,replayRequired:true};
       });
       return json(result);
     }
     if(path==="/api/game/finish"){
       const id=typeof body.gameId==="string"?body.gameId.slice(0,64):"",kills=Number(body.kills),score=Number(body.score);
       if(!id||!Number.isInteger(kills)||!Number.isInteger(score)||score<0||score>100000)return json({error:"Invalid game result"},400);
+      const preflight=await db.execute({sql:"SELECT * FROM game_sessions WHERE id=? AND tg_id=? AND consumed_at IS NULL AND expires_at>=?",args:[id,user.id,Date.now()]});
+      const candidate=preflight.rows[0] as Row|undefined;
+      if(!candidate)throw new Error("Game session expired or already submitted");
+      const replayRequired=id.startsWith("r2_");
+      if(replayRequired){
+        await verifyBattleReplay({
+          gameId:id,enemyTotal:Number(candidate.enemy_total),createdAt:Number(candidate.created_at),
+          now:Date.now(),kills,score,replay:body.replay
+        });
+      }
       const result=await txRun(db,async(tx)=>{
         const selected=await tx.execute({sql:"SELECT * FROM game_sessions WHERE id=? AND tg_id=? AND consumed_at IS NULL AND expires_at>=?",args:[id,user.id,Date.now()]});
         const session=selected.rows[0] as Row|undefined;if(!session)throw new Error("Game session expired or already submitted");
         const total=Number(session.enemy_total);
-        if(kills<0||kills>total||(kills>0&&score<kills*COINS_PER_KILL))throw new Error("Game result is not valid");
-        // Waves come out one after another, so a real match can't be cleared faster than this.
-        if(kills>0&&Date.now()-Number(session.created_at)<kills*MIN_MS_PER_KILL)throw new Error("Game result is not valid");
+        if(kills<0||kills>total||score!==kills*COINS_PER_KILL)throw new Error("Game result is not valid");
+        if(!replayRequired&&kills>0&&Date.now()-Number(session.created_at)<kills*MIN_MS_PER_KILL)throw new Error("Game result is not valid");
         if(session.pending_score!=null||session.pending_kills!=null)throw new Error("Game result is already waiting for ad verification");
         if(Number(session.uses_extra_play)>0){
           const ad=await tx.execute({sql:"SELECT status FROM ad_sessions WHERE id=? AND tg_id=?",args:[String(session.ad_session_id),user.id]});

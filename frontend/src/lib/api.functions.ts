@@ -8,9 +8,9 @@ async function post<T>(path:string,data:Record<string,unknown>,keepalive=false):
  return payload as T;
 }
 export const getMe=(data:Auth)=>post<Player>("me",data);
-export const startGame=(data:Auth)=>post<{gameId:string;enemyTotal:number;expiresAt:number}>("game/start",data);
-export const startGameAfterAd=(data:Auth & {adSessionId:string})=>post<{gameId:string;enemyTotal:number;expiresAt:number}>("game/start-ad",data);
-export const finishGame=(data:Auth & {gameId:string;score:number;kills:number})=>post<Player & {reward:number;pendingVerification?:boolean}>("game/finish",data);
+export const startGame=(data:Auth)=>post<{gameId:string;enemyTotal:number;expiresAt:number;replayRequired?:boolean}>("game/start",data);
+export const startGameAfterAd=(data:Auth & {adSessionId:string})=>post<{gameId:string;enemyTotal:number;expiresAt:number;replayRequired?:boolean}>("game/start-ad",data);
+export const finishGame=(data:Auth & {gameId:string;score:number;kills:number;replay?:import("./battle-replay").BattleReplay})=>post<Player & {reward:number;pendingVerification?:boolean}>("game/finish",data);
 export const cancelGame=(data:Auth & {gameId:string})=>post<Player & {cancelled:boolean;alreadyFinished?:boolean}>("game/cancel",data,true);
 export const startAdPlay=(data:Auth)=>post<{adSessionId:string;expiresAt:number;alreadyVerified?:boolean;waitingVerification?:boolean}>("ad/start",data);
 export type AdPlayStatus = Player & {verified:boolean; rewardPending:boolean; expired?:boolean; status?:string; cancelled?:boolean};

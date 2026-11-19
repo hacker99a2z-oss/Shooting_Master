@@ -126,7 +126,7 @@ async function toWebRequest(request) {
   for await (const chunk of request) {
     const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += part.length;
-    if (size > 256 * 1024) throw new Error("Request body too large");
+    if (size > 6 * 1024 * 1024) throw new Error("Request body too large");
     chunks.push(part);
   }
   const body = Buffer.concat(chunks);

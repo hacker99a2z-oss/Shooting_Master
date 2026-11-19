@@ -1,11 +1,12 @@
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { Link } from "@tanstack/react-router";
 import { Home, Skull } from "lucide-react";
-import { createBattle, emptyInput, randomEnemyTotal, stepBattle, type Battle, type ShotKind } from "@/lib/battle-rules";
+import { battleSeedFromGameId, createBattle, emptyInput, randomEnemyTotal, stepBattle, type Battle, type BattleInput, type ShotKind } from "@/lib/battle-rules";
+import { createBattleReplayRecorder, encodeBattleReplay, recordBattleFrame, sealBattleReplayRecorder } from "@/lib/battle-replay";
 import { cancelGame, finishGame, startGame, type Player } from "@/lib/api.functions";
 import { COIN_GAIN_KEY, type CoinGain } from "@/lib/coin-gain";
 import { auth } from "@/lib/tg";
@@ -97,7 +98,7 @@ function PointerAim({ controls }: { controls: ControlState }) {
 }
 
 /** The one stepper: input → rules → views → camera, in that order, every frame. */
-function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; controls: ControlState; onHud: (h: HudState) => void; onReady: () => void }) {
+function GameLoop({ battle, controls, onHud, onReady, onFrame, onTerminal }: { battle: Battle; controls: ControlState; onHud: (h: HudState) => void; onReady: () => void; onFrame?: (input: BattleInput, dt: number) => void; onTerminal?: (kills: number, score: number) => void }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const size = useThree((s) => s.size);
   const scene = useThree((s) => s.scene);
@@ -161,7 +162,9 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     const dt = Math.min(delta, 0.05);
     // 1. Rules.
     const input = readInput(controls, camera, tools.ray, tools.plane, tools.hit, tools.ndc);
+    onFrame?.(input, dt);
     stepBattle(battle, input, dt);
+    if (battle.over) onTerminal?.(battle.kills, battle.coins);
 
     // 2. Events → one-shot animations and effects.
     byId.clear();
@@ -338,7 +341,7 @@ function GameOver({ hud, save, error }: { hud: HudState; save: SaveState; error:
   );
 }
 
-type MatchSession = { seed: number; enemyTotal: number; gameId: string | null };
+type MatchSession = { seed: number; enemyTotal: number; gameId: string | null; replayRequired: boolean };
 
 function Match({ session }: { session: MatchSession }) {
   const { seed, enemyTotal, gameId } = session;
@@ -351,6 +354,10 @@ function Match({ session }: { session: MatchSession }) {
   const [save, setSave] = useState<SaveState>(gameId ? "saving" : "offline");
   const [saveError, setSaveError] = useState("");
   const finished = useRef(false);
+  const finalResult = useRef<{ kills: number; score: number } | null>(null);
+  const replayRecorder = useMemo(() => createBattleReplayRecorder(), [gameId, seed]);
+  const recordFrame = useCallback((input: BattleInput, dt: number) => recordBattleFrame(replayRecorder, input, dt), [replayRecorder]);
+  const captureTerminal = useCallback((kills: number, score: number) => { if (!replayRecorder.sealed) finalResult.current = { kills, score }; }, [replayRecorder]);
   const markReady = useMemo(() => () => wrapperRef.current?.setAttribute("data-scene-ready", "true"), []);
 
   // Round over → send the result to the game server; it adds the coins to the profile.
@@ -360,7 +367,14 @@ function Match({ session }: { session: MatchSession }) {
     const t = setTimeout(() => setOverShown(true), 1600);
     if (!gameId) return () => clearTimeout(t);
     const before = qc.getQueryData<Player>(["me"])?.coins;
-    finishGame({ ...auth(), gameId, score: battle.coins, kills: battle.kills })
+    sealBattleReplayRecorder(replayRecorder);
+    const result = finalResult.current ?? { kills: battle.kills, score: battle.coins };
+    const submit = async () => {
+      if (!session.replayRequired) return finishGame({ ...auth(), gameId, score: result.score, kills: result.kills });
+      const replay = await encodeBattleReplay(replayRecorder);
+      return finishGame({ ...auth(), gameId, score: result.score, kills: result.kills, replay });
+    };
+    void submit()
       .then((p) => {
         const from = before ?? p.coins - p.reward;
         if (p.reward > 0) qc.setQueryData<CoinGain>(COIN_GAIN_KEY, { from, to: p.coins, gained: p.reward });
@@ -372,7 +386,7 @@ function Match({ session }: { session: MatchSession }) {
         setSave("error");
       });
     return () => clearTimeout(t);
-  }, [hud.over, gameId, battle, qc]);
+  }, [hud.over, gameId, battle, qc, replayRecorder, session.replayRequired]);
 
   // Leaving in the middle of a round closes it on the server without coins.
   useEffect(
@@ -400,7 +414,7 @@ function Match({ session }: { session: MatchSession }) {
           <fog attach="fog" args={["#9cc6a0", 45, 95]} />
           <BattleGround seed={seed} />
           <BattleWorld props={battle.props} seed={seed} />
-          <GameLoop battle={battle} controls={controls} onHud={setHud} onReady={markReady} />
+          <GameLoop battle={battle} controls={controls} onHud={setHud} onReady={markReady} onFrame={gameId && session.replayRequired ? recordFrame : undefined} onTerminal={captureTerminal} />
         </Suspense>
       </Canvas>
       <Hud hud={hud} />
@@ -427,11 +441,11 @@ export function BattleGame() {
     if (started.current) return;
     started.current = true;
     const seed = newSeed();
-    const offline = () => ({ seed, enemyTotal: randomEnemyTotal(), gameId: null });
-    const pending = qc.getQueryData<{gameId:string;enemyTotal:number;expiresAt:number}>(["pending-arena-session"]);
+    const offline = () => ({ seed, enemyTotal: randomEnemyTotal(), gameId: null, replayRequired: false });
+    const pending = qc.getQueryData<{gameId:string;enemyTotal:number;expiresAt:number;replayRequired?:boolean}>(["pending-arena-session"]);
     if (pending) {
       qc.removeQueries({ queryKey: ["pending-arena-session"], exact: true });
-      setSession({ seed, enemyTotal: pending.enemyTotal, gameId: pending.gameId });
+      setSession({ seed: pending.replayRequired ? battleSeedFromGameId(pending.gameId) : seed, enemyTotal: pending.enemyTotal, gameId: pending.gameId, replayRequired: Boolean(pending.replayRequired) });
       return;
     }
     const credentials = auth();
@@ -442,7 +456,7 @@ export function BattleGame() {
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), START_TIMEOUT_MS));
     Promise.race([startGame(credentials), timeout])
       .then((result) => {
-        setSession({ seed, enemyTotal: result.enemyTotal, gameId: result.gameId });
+        setSession({ seed: result.replayRequired ? battleSeedFromGameId(result.gameId) : seed, enemyTotal: result.enemyTotal, gameId: result.gameId, replayRequired: Boolean(result.replayRequired) });
         void qc.invalidateQueries({ queryKey: ["me"] });
       })
       .catch((reason: unknown) => {
