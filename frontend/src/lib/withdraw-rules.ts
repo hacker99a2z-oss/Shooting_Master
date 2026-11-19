@@ -64,7 +64,7 @@ export function checkWithdrawalEligibility(input: {
   const requiredCoins = coinsForWithdrawUsd(usd);
 
   let reason: WithdrawalEligibilityReason = "ready";
-  let message = "Ready to withdraw.";
+  let message = "";
 
   if (!Number.isFinite(usd) || usd <= 0) {
     reason = "invalid_amount";
@@ -77,10 +77,10 @@ export function checkWithdrawalEligibility(input: {
     message = "Enter an amount using up to 2 decimal places.";
   } else if (requiredCents > withdrawBalanceCents) {
     reason = "insufficient_balance";
-    message = "Not enough Withdraw Balance for this amount.";
+    message = `Need ${(requiredCents / 100).toFixed(2)} withdraw balance.`;
   } else if (requiredCoins > coins) {
     reason = "insufficient_coins";
-    message = "Not enough Coins for this amount.";
+    message = `Need ${requiredCoins.toLocaleString()} coins.`;
   } else if (!walletConnected) {
     reason = "wallet_not_connected";
     message = "Connect Trust Wallet to continue.";
