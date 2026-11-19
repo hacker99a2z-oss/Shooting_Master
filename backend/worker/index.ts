@@ -633,7 +633,12 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
   const adminId=Number(callback.from?.id);
   const message=callback.message as Row|undefined;
   const chat=message?.chat as Row|undefined;
-  const notify=(text:string,alert=true)=>callbackId?answerTelegramCallback(env,callbackId,text,alert):Promise.resolve();
+  let callbackAcknowledged=false;
+  const notify=(text:string,alert=true)=>{
+    if(!callbackId||callbackAcknowledged)return Promise.resolve();
+    callbackAcknowledged=true;
+    return answerTelegramCallback(env,callbackId,text,alert);
+  };
   const admins=parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS);
   if(!Number.isSafeInteger(adminId)||!admins.includes(adminId)){
     await notify("You are not authorized to approve withdrawals.");
@@ -682,17 +687,22 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
       });
       const row=candidate.rows[0] as Row|undefined;
       if(row&&String(row.status)==="pending_approval"){
+        await notify("Checking treasury USDT balance and BNB gas before approval…",false);
         try{
-          const preflight=await preflightBep20Payout(env,Number(row.usd),String(row.wallet));
-          await notify(
-            "Treasury check passed: "+preflight.usdtBalance+" USDT available; "+preflight.bnbBalance+" BNB available. Queueing payout.",
-            false
-          );
+          await preflightBep20Payout(env,Number(row.usd),String(row.wallet));
         }catch(error){
           const reason=error instanceof PayoutSafetyError
             ?error.message
             :"Could not verify the treasury wallet on BNB Smart Chain. Check BSC_RPC_URL and try again.";
-          await notify(("Preflight blocked: "+reason+" No payment was queued.").slice(0,195),true);
+          console.error("[withdrawal approval] preflight blocked",{withdrawalId:parsed.withdrawalId,reason});
+          await editTelegramApprovalMessageWithKeyboard(
+            env,chat.id,Number(message.message_id),
+            "⚠️ <b>PREFLIGHT BLOCKED — NO TRANSFER SENT</b>\\n"+escapeHtml(reason)+"\\n\\nFix the treasury configuration or balances, then tap Approve & Send again.",
+            [
+              [{text:"✅ Approve & Send",callback_data:"wd:approve:"+parsed.withdrawalId}],
+              [{text:"❌ Reject & Refund",callback_data:"wd:reject:"+parsed.withdrawalId}],
+            ]
+          );
           return json({ok:true,disposition:"preflight_blocked"});
         }
       }
@@ -745,6 +755,14 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
     }
     if(outcome.kind==="blocked"){
       await notify(outcome.reason,true);
+      await editTelegramApprovalMessageWithKeyboard(
+        env,chat.id,messageId,
+        "⚠️ <b>APPROVAL BLOCKED</b>\\n"+escapeHtml(outcome.reason),
+        [
+          [{text:"✅ Approve & Send",callback_data:"wd:approve:"+parsed.withdrawalId}],
+          [{text:"❌ Reject & Refund",callback_data:"wd:reject:"+parsed.withdrawalId}],
+        ]
+      );
       return json({ok:true});
     }
     if(outcome.kind==="reject_blocked"){
