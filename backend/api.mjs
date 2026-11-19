@@ -160,6 +160,35 @@ async function registerTelegramWebhook() {
 
 async function handle(request, response) {
   try {
+    // Keep the liveness probe entirely inside the Node HTTP server. It must not
+    // depend on the Worker adapter, Turso, or any third-party service.
+    const requestUrl = new URL(request.url || "/", "http://" + (request.headers.host || "localhost"));
+    const path = requestUrl.pathname.replace(/\\/+$/, "") || "/";
+    if (path === "/health" && (request.method === "GET" || request.method === "HEAD")) {
+      const origin = request.headers.origin;
+      if (origin && origin !== env.APP_ORIGIN) {
+        response.writeHead(403, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(request.method === "HEAD" ? undefined : JSON.stringify({ error: "Origin not allowed" }));
+        return;
+      }
+      const headers = {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      };
+      if (origin) {
+        headers["access-control-allow-origin"] = origin;
+        headers.vary = "Origin";
+      }
+      response.writeHead(200, headers);
+      response.end(request.method === "HEAD" ? undefined : JSON.stringify({
+        ok: true,
+        service: "shooting-master-api",
+        adsgramRewardConfigured: Boolean(process.env.ADSGRAM_REWARD_SECRET),
+      }));
+      console.info("[health] " + request.method + " /health 200");
+      return;
+    }
+
     const webRequest = await toWebRequest(request);
     const webResponse = await cloudflareWorker.fetch(webRequest, env, {
       waitUntil(promise) {
@@ -191,6 +220,10 @@ async function handle(request, response) {
 
 const port = Number(process.env.PORT || 10000);
 const server = createServer((request, response) => void handle(request, response));
+// Render's edge proxy can reuse keep-alive connections. Keep Node's idle socket
+// timeout comfortably above the proxy's request window to avoid intermittent resets.
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
 
 // Render Free has no separate Background Worker or Cron service. Poll while
 // this Web Service is awake; incoming API requests also trigger immediate drains.
