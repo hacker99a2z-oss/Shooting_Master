@@ -64,7 +64,12 @@ jobs:
             process.exit(1);
           }
           const { appendFileSync } = await import("node:fs");
-          appendFileSync(process.env.GITHUB_OUTPUT, `username=${result.result.username}\\n`);
+          const username = String(result.result.username).trim().replace(/^@/, "");
+          if (!/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+            console.error("Telegram bot returned an invalid username.");
+            process.exit(1);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `username=${username}\n`);
           console.log("Telegram bot username resolved; webhook is managed by Render.");
           NODE
       - name: Install frontend dependencies
