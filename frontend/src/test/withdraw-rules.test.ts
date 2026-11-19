@@ -28,19 +28,19 @@ describe("withdraw rules", () => {
 
   it("checks required Coins before withdraw balance", () => {
     const result = checkWithdrawalEligibility({
-      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1999, walletConnected: true,
     });
-    expect(result.reason).toBe("insufficient_balance");
-    expect(result.message).toBe("Need $0.02 withdraw balance.");
+    expect(result.reason).toBe("insufficient_coins");
+    expect(result.message).toBe("Need 2,000 coins.");
     expect(result.canWithdraw).toBe(false);
   });
 
   it("checks withdraw balance after Coins are sufficient", () => {
     const result = checkWithdrawalEligibility({
-      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 2, coins: 1999, walletConnected: true,
+      usd: 0.02, minimumUsd: 0.02, withdrawBalanceCents: 1, coins: 100000, walletConnected: true,
     });
     expect(result.reason).toBe("insufficient_balance");
-    expect(result.message).toBe("Need 0.02 withdraw balance.");
+    expect(result.message).toBe("Need $0.02 withdraw balance.");
     expect(result.canWithdraw).toBe(false);
   });
 
