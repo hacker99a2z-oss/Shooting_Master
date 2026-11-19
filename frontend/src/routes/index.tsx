@@ -10,7 +10,7 @@ import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/hom
 import { COIN_COUNT_DELAY_MS, COIN_COUNT_MS, COIN_GAIN_KEY, countUpValue, type CoinGain } from "@/lib/coin-gain";
 import battleArena from "@/assets/battle-arena.jpg";
 import { claimDailyGoal } from "@/lib/api.functions";
-import { auth } from "@/lib/tg";
+import { auth, telegramUserPreview } from "@/lib/tg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -54,7 +54,11 @@ function useCoinGain(coins: number | undefined) {
 function Home() {
   const { data: me, error } = usePlayer();
   const coinView = useCoinGain(me?.coins);
-  const initial = (me?.name || "?").charAt(0).toUpperCase();
+  const telegramUser = telegramUserPreview();
+  const displayName = me?.name ?? telegramUser?.first_name;
+  const displayPhoto = me?.photoUrl ?? telegramUser?.photo_url;
+  const displayId = me?.tgId ?? telegramUser?.id;
+  const initial = (displayName || "?").charAt(0).toUpperCase();
   const qc = useQueryClient();
   const [claiming, setClaiming] = useState<number | null>(null);
   const [claimError, setClaimError] = useState("");
@@ -83,14 +87,14 @@ function Home() {
     <AppShell>
       <section className="profile-card" aria-label="Player profile">
         <div className="profile-card-left">
-          {me?.photoUrl ? (
-            <img src={me.photoUrl} alt={me.name} className="profile-avatar" />
+          {displayPhoto ? (
+            <img src={displayPhoto} alt={displayName || "Player"} className="profile-avatar" />
           ) : (
             <div className="profile-avatar profile-avatar-fallback">{initial}</div>
           )}
           <div className="min-w-0">
-            <p className="profile-name">{me?.name ?? "Loading…"}</p>
-            <p className="profile-id">ID: {me?.tgId ?? "…"}</p>
+            <p className="profile-name">{displayName ?? "Loading…"}</p>
+            <p className="profile-id">ID: {displayId ?? "…"}</p>
           </div>
         </div>
         <div className="profile-coins" data-counting={coinView.counting ? "true" : undefined}>
