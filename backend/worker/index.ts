@@ -598,7 +598,13 @@ async function telegramWebhook(request:Request,env:Env){
 async function api(request:Request,env:Env,ctx:ExecutionContext){
   const path=new URL(request.url).pathname.replace(/\/+$/,"")||"/";
   if(path==="/telegram/webhook")return telegramWebhook(request,env);
-  if(request.method==="GET"&&path==="/health")return json({ok:true,service:"shooting-master-api",adsgramRewardConfigured:Boolean(env.ADSGRAM_REWARD_SECRET)});
+  if(path==="/health"&&(request.method==="GET"||request.method==="HEAD")){
+    const health={ok:true,service:"shooting-master-api",adsgramRewardConfigured:Boolean(env.ADSGRAM_REWARD_SECRET)};
+    // UptimeRobot and other monitors commonly probe with HEAD. Return the same
+    // successful status without a response body for HEAD requests.
+    if(request.method==="HEAD")return new Response(null,{status:200,headers:{"cache-control":"no-store"}});
+    return json(health);
+  }
   if(request.method==="GET"&&path==="/api/adsgram/reward"){
     const url=new URL(request.url);
     const suppliedKeys=[...rawQueryValues(url.search,"key"),...rawQueryValues(url.search,"secret"),...rawQueryValues(url.search,"token")];
