@@ -27,6 +27,8 @@ if (auth().initData) {
       return player;
     },
     staleTime: 0,
+    retry: 4,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 4_000),
   }).catch(() => {});
 }
 
