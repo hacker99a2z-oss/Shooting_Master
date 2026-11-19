@@ -9,12 +9,13 @@ export const DAILY_GAME_GOALS = [
 /** Coins earned for each enemy killed in Battle Arena (shown on the arena card). */
 export const COINS_PER_ENEMY = 10;
 
-export function dailyGamesProgress(gamesToday: number, target: number) {
+export function dailyGamesProgress(gamesToday: number, target: number, claimedToday = false) {
   const played = Math.max(0, Math.min(target, Math.floor(Number(gamesToday) || 0)));
   return {
     played,
     target,
     percent: (played / target) * 100,
-    canClaim: played >= target,
+    claimed: claimedToday,
+    canClaim: played >= target && !claimedToday,
   };
 }

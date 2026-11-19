@@ -31,6 +31,9 @@ interface Env {
   PAYOUT_CHANNEL_ID?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
+/** Daily Games goals: games played today → reward in coins (100,000 coins = $1). Mirrors frontend home-rules. */
+const DAILY_GOAL_REWARDS:Record<number,number>={10:3000,20:4000};
+function claimedGoalsToday(row:Row):number[]{return row.claimed_goals_date===today()?String(row.claimed_goals??"").split(",").filter(Boolean).map(Number):[];}
 const DAILY_GAMES_GOAL=100, BONUS_MIN_COINS=1000, BONUS_MAX_COINS=5000;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10, MAX_EXTRA_PLAYS=3;
 const AD_COOLDOWN_MS=150000,AD_WATCH_COOLDOWN_MS=180000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=1800000;
@@ -85,7 +88,7 @@ function view(row:Row){
     canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
-    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t,
+    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t,claimedGoals:claimedGoalsToday(row),
     serverNow:Date.now()};
 }
 async function ensurePlayer(db:any,user:AuthUser,startParam=""){
@@ -710,6 +713,22 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       if(!player)return json({error:"Player not found"},404);
       const status=String(session.status),expired=Number(session.expires_at)<Date.now()&&status!=="rewarded";
       return json({...view(player),verified:status==="rewarded",rewardPending:!expired&&status!=="rewarded",expired});
+    }
+    if(path==="/api/goal/claim"){
+      const target=Number(body.target),reward=DAILY_GOAL_REWARDS[target];
+      if(!reward)return json({error:"Unknown daily goal"},400);
+      try{
+        const result=await txRun(db,async(tx)=>{
+          const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
+          const games=p.daily_games_date===today()?Number(p.daily_games):0;
+          if(games<target)throw new Error(`Play ${target} games today to claim`);
+          const claimed=claimedGoalsToday(p);
+          if(claimed.includes(target))throw new Error("Already claimed today");
+          await tx.execute({sql:"UPDATE players SET coins=coins+?,claimed_goals=?,claimed_goals_date=? WHERE tg_id=?",args:[reward,[...claimed,target].join(","),today(),user.id]});
+          return {...view((await playerRow(db,user.id,tx))!),reward};
+        });
+        return json(result);
+      }catch(e){return json({error:e instanceof Error?e.message:"Claim failed"},400);}
     }
     if(path==="/api/bonus/claim"){
       const result=await txRun(db,async(tx)=>{

@@ -1,5 +1,5 @@
 export type Auth = { initData: string; startParam?: string };
-export type Player = { tgId:number; name:string; username:string|null; coins:number; seasonCoins:number; canPlayFree:boolean; extraPlays:number; gamesPlayed:number; bestScore:number; referralCount:number; referralPaidCount:number; photoUrl:string|null; adReadyAt:number; dailyGames:number; bonusClaimedToday:boolean; serverNow:number };
+export type Player = { tgId:number; name:string; username:string|null; coins:number; seasonCoins:number; canPlayFree:boolean; extraPlays:number; gamesPlayed:number; bestScore:number; referralCount:number; referralPaidCount:number; photoUrl:string|null; adReadyAt:number; dailyGames:number; bonusClaimedToday:boolean; claimedGoals?:number[]; serverNow:number };
 const API_BASE = String(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 async function post<T>(path:string,data:Record<string,unknown>,keepalive=false):Promise<T>{
  const response=await fetch(API_BASE+"/api/"+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(data),credentials:"omit",cache:"no-store",keepalive});
@@ -17,6 +17,7 @@ export type AdPlayStatus = Player & {verified:boolean; rewardPending:boolean; ex
 export const grantAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/complete",data);
 export const getAdPlayStatus=(data:Auth & {adSessionId:string})=>post<AdPlayStatus>("ad/status",data);
 export const cancelAdPlay=(data:Auth & {adSessionId:string})=>post<AdPlayStatus & {cancelled?:boolean}>("ad/cancel",data,true);
+export const claimDailyGoal=(data:Auth & {target:number})=>post<Player & {reward:number}>("goal/claim",data);
 export const claimDailyBonus=(data:Auth)=>post<Player & {bonus:number}>("bonus/claim",data);
 export type LeaderboardRow={rank:number;tgId:number;name:string;username:string|null;coins:number;prize:number;isMe:boolean};
 export const getLeaderboard=(data:Auth)=>post<{list:LeaderboardRow[];seasonEndsAt:number}>("leaderboard",data);

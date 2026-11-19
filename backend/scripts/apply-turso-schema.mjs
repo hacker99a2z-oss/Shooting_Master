@@ -70,6 +70,15 @@ try {
   } else {
     console.log("Turso schema migration 0008 already applied.");
   }
+
+  const goalMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=9 LIMIT 1");
+  if (!goalMigration.rows.length) {
+    const goalSql = await readFile(new URL("../migrations/0009_daily_goal_claims.sql", import.meta.url), "utf8");
+    await db.executeMultiple(goalSql);
+    console.log("Turso schema migration 0009 applied.");
+  } else {
+    console.log("Turso schema migration 0009 already applied.");
+  }
 } finally {
   db.close();
 }

@@ -19,3 +19,12 @@ describe("home Daily Games goals", () => {
     expect(dailyGamesProgress(57, 20).played).toBe(20);
   });
 });
+
+describe("daily goal claims", () => {
+  it("can claim once the target is reached and not yet claimed today", () => {
+    expect(dailyGamesProgress(10, 10, false).canClaim).toBe(true);
+  });
+  it("cannot claim the same goal twice in a day", () => {
+    expect(dailyGamesProgress(12, 10, true).canClaim).toBe(false);
+  });
+});

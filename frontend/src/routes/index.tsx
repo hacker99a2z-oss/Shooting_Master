@@ -8,6 +8,8 @@ import { usePlayer } from "@/hooks/use-player";
 import { COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 import { COIN_COUNT_DELAY_MS, COIN_COUNT_MS, COIN_GAIN_KEY, countUpValue, type CoinGain } from "@/lib/coin-gain";
 import battleArena from "@/assets/battle-arena.jpg";
+import { claimDailyGoal } from "@/lib/api.functions";
+import { auth } from "@/lib/tg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -52,7 +54,27 @@ function Home() {
   const { data: me, error } = usePlayer();
   const coinView = useCoinGain(me?.coins);
   const initial = (me?.name || "?").charAt(0).toUpperCase();
-  const goals = DAILY_GAME_GOALS.map((g) => ({ ...dailyGamesProgress(me?.dailyGames ?? 0, g.target), rewardUsd: g.rewardUsd }));
+  const qc = useQueryClient();
+  const [claiming, setClaiming] = useState<number | null>(null);
+  const [claimError, setClaimError] = useState("");
+  const goals = DAILY_GAME_GOALS.map((g) => ({
+    ...dailyGamesProgress(me?.dailyGames ?? 0, g.target, me?.claimedGoals?.includes(g.target) ?? false),
+    rewardUsd: g.rewardUsd,
+  }));
+  const claim = async (target: number) => {
+    setClaiming(target);
+    setClaimError("");
+    try {
+      const before = me?.coins;
+      const p = await claimDailyGoal({ ...auth(), target });
+      if (p.reward > 0) qc.setQueryData<CoinGain>(COIN_GAIN_KEY, { from: before ?? p.coins - p.reward, to: p.coins, gained: p.reward });
+      qc.setQueryData(["me"], p);
+    } catch (e) {
+      setClaimError(e instanceof Error ? e.message : "Claim failed");
+    } finally {
+      setClaiming(null);
+    }
+  };
 
   // Load the Battle Arena models now so the map is ready the moment Play is tapped.
   useEffect(() => preloadBattle(), []);
@@ -111,7 +133,7 @@ function Home() {
             <Gamepad2 className="h-4 w-4" />
             Games
           </p>
-          <p className="home-games-count">{me ? me.gamesPlayed.toLocaleString() : "…"}</p>
+          <p className="home-games-count">{me ? me.dailyGames.toLocaleString() : "…"}</p>
         </section>
 
         {goals.map((goal) => (
@@ -132,8 +154,13 @@ function Home() {
                 {goal.played}/{goal.target}
               </span>
             </div>
-            <button type="button" className="home-claim-button" disabled={!goal.canClaim}>
-              Claim {goal.rewardUsd} $
+            <button
+              type="button"
+              className="home-claim-button"
+              disabled={!goal.canClaim || claiming !== null}
+              onClick={() => void claim(goal.target)}
+            >
+              {goal.claimed ? "Claimed" : claiming === goal.target ? "Claiming…" : `Claim ${goal.rewardUsd} $`}
             </button>
           </section>
         ))}
@@ -141,6 +168,7 @@ function Home() {
 
       <h2 className="home-section-title">How To Play</h2>
 
+      {claimError && <p className="hud-panel p-3 text-center text-sm text-muted-foreground">{claimError}</p>}
       {error && <p className="hud-panel p-3 text-center text-sm text-muted-foreground">{(error as Error).message}</p>}
     </AppShell>
   );
