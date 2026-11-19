@@ -18,6 +18,8 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
       - key: ADSGRAM_REWARD_SECRET
         sync: false
       - key: OFFICIAL_CHANNEL_URL

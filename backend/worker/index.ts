@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
+import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback } from "../withdrawal-approval.ts";
 
 interface Env {
   TURSO_DATABASE_URL: string;
@@ -29,6 +30,7 @@ interface Env {
   PAYOUT_PRIVATE_KEY?: string;
   BSC_RPC_URL?: string;
   PAYOUT_CHANNEL_ID?: string;
+  ADMIN_TELEGRAM_IDS?: string;
 }
 const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 /** Daily Games goals: games played today → reward in coins (100,000 coins = $1). Mirrors frontend home-rules. */
@@ -402,6 +404,161 @@ async function processBep20Payout(p:PayoutMessage,env:Env,db:any){
 }
 
 type StartKeyboardButton={text:string;url?:string;web_app?:{url:string}};
+
+async function telegramCall(env:Env,method:string,payload:Row):Promise<Row>{
+  if(!env.TELEGRAM_BOT_TOKEN)throw new Error("Telegram bot is not configured");
+  const response=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/"+method,{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)
+  });
+  const result=await response.json().catch(()=>({})) as Row;
+  if(!response.ok||result.ok!==true)throw new Error(typeof result.description==="string"?result.description:"Telegram "+method+" failed ("+response.status+")");
+  return result.result as Row;
+}
+
+async function notifyWithdrawalAdmins(env:Env,details:{id:string;tgId:number;name:string;username:string|null;usd:number;coins:number;wallet:string;createdAt:string}):Promise<boolean>{
+  const admins=parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS);
+  if(!admins.length){
+    console.error("[withdrawal approval] ADMIN_TELEGRAM_IDS is not configured");
+    return false;
+  }
+  const lines=[
+    "🔐 <b>WITHDRAWAL APPROVAL REQUIRED</b>","",
+    "<b>Request:</b> <code>"+escapeHtml(details.id)+"</code>",
+    "<b>Player:</b> "+escapeHtml(details.name)+(details.username?" (@"+escapeHtml(details.username)+")":""),
+    "<b>Telegram ID:</b> <code>"+details.tgId+"</code>",
+    "<b>Amount:</b> $"+details.usd.toFixed(2)+" USDT",
+    "<b>Reserved coins:</b> "+details.coins.toLocaleString("en-US"),
+    "<b>Destination:</b> <code>"+escapeHtml(details.wallet)+"</code>",
+    "<b>Network:</b> BNB Smart Chain (BEP-20)",
+    "<b>Requested:</b> "+escapeHtml(details.createdAt),"",
+    "Approve only after checking the destination and payout configuration."
+  ];
+  const replyMarkup={inline_keyboard:[
+    [{text:"✅ Approve & Send",callback_data:"wd:approve:"+details.id}],
+    [{text:"❌ Reject & Refund",callback_data:"wd:reject:"+details.id}]
+  ]};
+  const sent=await Promise.all(admins.map(async(adminId)=>{
+    try{
+      await telegramCall(env,"sendMessage",{chat_id:adminId,text:lines.join("\n"),parse_mode:"HTML",disable_web_page_preview:true,reply_markup:replyMarkup});
+      return true;
+    }catch(error){
+      console.error("[withdrawal approval] admin notification failed",adminId,error);
+      return false;
+    }
+  }));
+  return sent.some(Boolean);
+}
+async function answerTelegramCallback(env:Env,callbackId:string,text:string,showAlert=true){
+  try{await telegramCall(env,"answerCallbackQuery",{callback_query_id:callbackId,text,show_alert:showAlert});}
+  catch(error){console.error("[withdrawal approval] callback acknowledgement failed",error);}
+}
+async function editTelegramApprovalMessage(env:Env,chatId:number|string,messageId:number,text:string){
+  try{await telegramCall(env,"editMessageText",{
+    chat_id:chatId,message_id:messageId,text,parse_mode:"HTML",disable_web_page_preview:true,
+    reply_markup:{inline_keyboard:[]}
+  });}catch(error){console.error("[withdrawal approval] approval message update failed",error);}
+}
+
+async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
+  const callbackId=typeof callback.id==="string"?callback.id:"";
+  const adminId=Number(callback.from?.id);
+  const message=callback.message as Row|undefined;
+  const chat=message?.chat as Row|undefined;
+  const notify=(text:string,alert=true)=>callbackId?answerTelegramCallback(env,callbackId,text,alert):Promise.resolve();
+  const admins=parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS);
+  if(!Number.isSafeInteger(adminId)||!admins.includes(adminId)){
+    await notify("You are not authorized to approve withdrawals.");
+    return json({ok:true});
+  }
+  if(chat?.type!=="private"||String(chat.id)!==String(adminId)||!Number.isSafeInteger(Number(message?.message_id))){
+    await notify("Open the approval request in your private chat with the bot.");
+    return json({ok:true});
+  }
+  const parsed=parseWithdrawalApprovalCallback(callback.data);
+  if(!parsed){
+    await notify("This approval button is invalid or expired.");
+    return json({ok:true});
+  }
+  if(parsed.action==="approve"&&!payoutConfigured(env)){
+    await notify("Automatic payouts are disabled or payout credentials are incomplete. No payment was sent.",true);
+    return json({ok:true});
+  }
+
+  const db=dbFor(env);
+  try{
+    const outcome=await txRun(db,async(tx)=>{
+      const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
+      const row=selected.rows[0] as Row|undefined;
+      if(!row)return {kind:"missing" as const};
+      if(String(row.status)!=="pending_approval")return {kind:"handled" as const,status:String(row.status)};
+      if(parsed.action==="reject"){
+        const at=new Date().toISOString();
+        const changed=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Rejected by owner; reserved coins refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[at,parsed.withdrawalId]});
+        if(changed.rowsAffected!==1)return {kind:"handled" as const,status:"changed"};
+        const refund=await tx.execute({sql:"UPDATE players SET coins=coins+? WHERE tg_id=?",args:[Number(row.coins),Number(row.tg_id)]});
+        if(refund.rowsAffected!==1)throw new Error("Could not refund reserved coins");
+        await writePayoutEvent(tx,parsed.withdrawalId,"rejected",{adminTelegramId:adminId,refundCoins:Number(row.coins),at});
+        return {kind:"rejected" as const,coins:Number(row.coins),usd:Number(row.usd)};
+      }
+      if(!payoutConfigured(env))return {kind:"blocked" as const,reason:"Automatic payouts are disabled or not fully configured."};
+      const daily=await tx.execute({
+        sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid','payout_failed_review')",
+        args:[today()]
+      });
+      const limitError=approvalPayoutLimitError(Number(row.usd),Number(daily.rows[0]?.total??0));
+      if(limitError)return {kind:"blocked" as const,reason:limitError};
+      const at=new Date().toISOString();
+      const changed=await tx.execute({sql:"UPDATE withdrawals SET status='pending_auto',payout_error=NULL,payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[at,parsed.withdrawalId]});
+      if(changed.rowsAffected!==1)return {kind:"handled" as const,status:"changed"};
+      await writePayoutEvent(tx,parsed.withdrawalId,"approved",{adminTelegramId:adminId,at,network:"BEP20",asset:"USDT"});
+      const payout:PayoutMessage={withdrawalId:String(row.id),tgId:Number(row.tg_id),usd:Number(row.usd),coins:Number(row.coins),wallet:String(row.wallet),asset:"USDT",network:"BEP20",createdAt:String(row.created_at)};
+      return {kind:"approved" as const,payout,usd:Number(row.usd)};
+    });
+    const messageId=Number(message.message_id);
+    if(outcome.kind==="missing"){
+      await notify("Withdrawal request not found.");
+      await editTelegramApprovalMessage(env,chat.id,messageId,"⚠️ <b>Request not found.</b>");
+      return json({ok:true});
+    }
+    if(outcome.kind==="handled"){
+      await notify("This withdrawal has already been handled.");
+      await editTelegramApprovalMessage(env,chat.id,messageId,"ℹ️ <b>This request is no longer awaiting approval.</b>\nCurrent state: <code>"+escapeHtml(outcome.status)+"</code>");
+      return json({ok:true});
+    }
+    if(outcome.kind==="blocked"){
+      await notify(outcome.reason,true);
+      return json({ok:true});
+    }
+    if(outcome.kind==="rejected"){
+      await notify("Rejected. "+outcome.coins.toLocaleString("en-US")+" coins were refunded.",true);
+      await editTelegramApprovalMessage(env,chat.id,messageId,"❌ <b>WITHDRAWAL REJECTED</b>\n$"+outcome.usd.toFixed(2)+" request rejected. "+outcome.coins.toLocaleString("en-US")+" coins have been refunded.");
+      return json({ok:true,disposition:"rejected"});
+    }
+    let queueError="";
+    try{await env.PAYOUT_QUEUE.send(outcome.payout);}
+    catch(error){
+      queueError=error instanceof Error?error.message:"Payout queue unavailable";
+      const at=new Date().toISOString();
+      await db.execute({sql:"UPDATE withdrawals SET status='pending_review',payout_error=?,payout_updated_at=? WHERE id=? AND status='pending_auto'",args:[queueError.slice(0,500),at,parsed.withdrawalId]});
+      await writePayoutEvent(db,parsed.withdrawalId,"queue_fallback",{reason:queueError.slice(0,500),at});
+    }
+    if(queueError){
+      await notify("Approval was recorded, but the payout queue is unavailable. Manual review is required.",true);
+      await editTelegramApprovalMessage(env,chat.id,messageId,"⚠️ <b>APPROVAL RECORDED — MANUAL REVIEW REQUIRED</b>\nThe payout queue was unavailable. No blockchain transfer was started.");
+      return json({ok:true,disposition:"manual_review"});
+    }
+    await writePayoutEvent(db,parsed.withdrawalId,"queued",{asset:"USDT",network:"BEP20",wallet:outcome.payout.wallet,usd:outcome.payout.usd,at:new Date().toISOString()}).catch((error)=>console.error("[withdrawal approval] queue audit write failed",error));
+    await notify("Approved. The app will show Sent only after BNB Chain confirms the transfer.",false);
+    await editTelegramApprovalMessage(env,chat.id,messageId,"✅ <b>APPROVED & QUEUED</b>\n$"+outcome.usd.toFixed(2)+" USDT is being processed. The user will see <b>Sent</b> only after blockchain confirmation.");
+    return json({ok:true,disposition:"queued"});
+  }catch(error){
+    console.error("[withdrawal approval] callback handling failed",error);
+    await notify("Temporary server error. Please retry the button.",true);
+    return json({ok:false},503);
+  }finally{db.close();}
+}
+
+async function telegramWebhook(request:Request,env:Env){
 function telegramLink(value?:string):string|null{
   const url=value?.trim()||"";
   return /^https:\/\/t\.me\/[A-Za-z0-9_+.-]+(?:\?[A-Za-z0-9_=&%-]+)?$/.test(url)?url:null;
@@ -420,7 +577,7 @@ async function telegramWebhook(request:Request,env:Env){
   const text=[
     "🪙 <b>EARN COINS:</b> Defeat enemies to earn 10 coins per kill and collect bonus rewards.",
     "💵 <b>DOLLAR BALANCE:</b> Your coins convert to dollars automatically — 100,000 coins = $1.",
-    "💸 <b>WITHDRAW:</b> Submit a withdrawal request from $0.02; requests are sent automatically for manual review before payment."
+    "💸 <b>WITHDRAW:</b> Requests wait for owner approval. Eligible USDT BEP-20 payments are sent after approval and blockchain confirmation."
   ].join("\n");
   const keyboard:StartKeyboardButton[][]=[
     [{text:"🎮 Open App",web_app:{url:env.APP_ORIGIN}}]
@@ -755,38 +912,28 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const isBep20Address=isBep20Destination(wallet);
       if(body.asset!=="USDT"||body.network!=="BEP20"||!Number.isFinite(usd)||usd<0.02||!isBep20Address)
         return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and USDT payout selection."},400);
+      if(!parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS).length)
+        return json({error:"Withdrawal approval is not configured yet. Please contact support; no coins were deducted."},503);
       const coins=Math.round(usd*100000),withdrawalId=crypto.randomUUID(),createdAt=new Date().toISOString();
-      const automatic=payoutConfigured(env)&&usd<=AUTO_PAYOUT_MAX_USD;
-      let status:"pending_auto"|"pending_review"="pending_review";
       await txRun(db,async(tx)=>{
-        let withinDailyLimit=false;
-        if(automatic){
-          const daily=await tx.execute({
-            sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid','payout_failed_review')",
-            args:[createdAt.slice(0,10)]
-          });
-          withinDailyLimit=Number(daily.rows[0]?.total??0)+usd<=AUTO_PAYOUT_DAILY_MAX_USD;
-        }
-        status=automatic&&withinDailyLimit?"pending_auto":"pending_review";
         const spent=await tx.execute({sql:"UPDATE players SET coins=coins-? WHERE tg_id=? AND coins>=?",args:[coins,user.id,coins]});
         if(spent.rowsAffected!==1)throw new Error("Not enough coins");
-        await tx.execute({
-          sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at,payout_asset,payout_network,payout_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-          args:[withdrawalId,user.id,coins,usd,wallet,status,createdAt,"USDT","BEP20",createdAt]
-        });
+        await tx.execute({sql:"INSERT INTO withdrawals (id,tg_id,coins,usd,wallet,status,created_at,payout_asset,payout_network,payout_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",args:[withdrawalId,user.id,coins,usd,wallet,"pending_approval",createdAt,"USDT","BEP20",createdAt]});
+        await writePayoutEvent(tx,withdrawalId,"requested",{tgId:user.id,usd,coins,at:createdAt});
       });
-      if(status==="pending_auto"){
-        try{
-          await env.PAYOUT_QUEUE.send({withdrawalId,tgId:user.id,usd,coins,wallet,asset:"USDT",network:"BEP20",createdAt} satisfies PayoutMessage);
-          await writePayoutEvent(db,withdrawalId,"queued",{asset:"USDT",network:"BEP20",wallet,usd,at:createdAt});
-        }catch(error){
-          const reason=error instanceof Error?error.message:"Queue unavailable";
-          await db.execute({sql:"UPDATE withdrawals SET status='pending_review',payout_error=?,payout_updated_at=? WHERE id=? AND status='pending_auto'",args:[reason.slice(0,500),new Date().toISOString(),withdrawalId]});
-          await writePayoutEvent(db,withdrawalId,"queue_fallback",{reason:reason.slice(0,500),at:new Date().toISOString()});
-          return json({ok:true,id:withdrawalId,status:"pending_review",automatic:false});
-        }
+      const notified=await notifyWithdrawalAdmins(env,{id:withdrawalId,tgId:user.id,name:user.firstName,username:user.username,usd,coins,wallet,createdAt});
+      if(!notified){
+        await txRun(db,async(tx)=>{
+          const cancelled=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Admin notification failed; reserved coins refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[new Date().toISOString(),withdrawalId]});
+          if(cancelled.rowsAffected===1){
+            const refund=await tx.execute({sql:"UPDATE players SET coins=coins+? WHERE tg_id=?",args:[coins,user.id]});
+            if(refund.rowsAffected!==1)throw new Error("Could not refund coins after failed admin notification");
+            await writePayoutEvent(tx,withdrawalId,"notification_failed",{tgId:user.id,refundCoins:coins,at:new Date().toISOString()});
+          }
+        });
+        return json({error:"The owner could not be notified. Your coins were returned. Open the Shooting Master bot and press Start, then try again."},503);
       }
-      return json({ok:true,id:withdrawalId,status,automatic:status==="pending_auto"});
+      return json({ok:true,id:withdrawalId,status:"pending_approval",automatic:false});
     }
     return json({error:"Not found"},404);
   }catch(e){

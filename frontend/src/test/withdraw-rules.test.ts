@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
-import { HISTORY_LIMIT, coinsForWithdrawUsd, isPendingWithdrawal } from "@/lib/withdraw-rules";
+import { HISTORY_LIMIT, coinsForWithdrawUsd, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
 import { shortenWalletAddress } from "@/lib/wallet-rules";
 
@@ -13,6 +13,15 @@ describe("withdraw rules", () => {
     expect(isPendingWithdrawal("pending_review")).toBe(true);
     expect(isPendingWithdrawal("processing")).toBe(true);
     expect(isPendingWithdrawal("paid")).toBe(false);
+  });
+  it("shows the approval and payout stages clearly", () => {
+    expect(withdrawalStatusLabel("pending_approval")).toBe("Waiting for Approval");
+    expect(withdrawalStatusLabel("pending_auto")).toBe("Processing");
+    expect(withdrawalStatusLabel("processing")).toBe("Processing");
+    expect(withdrawalStatusLabel("pending_review")).toBe("Manual Review");
+    expect(withdrawalStatusLabel("payout_failed_review")).toBe("Manual Review");
+    expect(withdrawalStatusLabel("paid")).toBe("Sent");
+    expect(withdrawalStatusLabel("rejected")).toBe("Rejected");
   });
 });
 

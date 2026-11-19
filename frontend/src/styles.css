@@ -445,6 +445,7 @@ h2, h3 { text-shadow: 0 2px 0 color-mix(in oklab, var(--background) 70%, black);
 .history-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; padding: .35rem .7rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
 .history-status.is-pending { color: var(--hazard-ink); background-image: var(--gradient-gold); box-shadow: 0 0 12px -3px color-mix(in oklab, var(--gold) 80%, transparent); }
 .history-status.is-rejected { color: var(--destructive-foreground); background: var(--destructive); }
+.history-status.is-sent { color: var(--primary-foreground); background: var(--success); }
 .history-view-button {
   display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; padding: .45rem .9rem;
   border: 1px solid color-mix(in oklab, var(--success) 70%, white); border-radius: 999px;

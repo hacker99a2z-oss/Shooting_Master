@@ -9,7 +9,7 @@ import { getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD, coinsToUsd } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
-import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal } from "@/lib/withdraw-rules";
+import { coinsForWithdrawUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { TRUST_EXTENSION_URL, connectTrustWalletSession, currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
@@ -272,7 +272,7 @@ function Withdraw() {
         { id: result.id, coins: neededCoins, usd: Math.floor(amount * 100) / 100, wallet: walletAddress, status: result.status, created_at: new Date().toISOString(), channel_post_url: null },
         ...rows,
       ].slice(0, HISTORY_LIMIT));
-      toast.success("Withdrawal sent! It will show as Pending until the payout is complete.");
+      toast.success("Withdrawal request submitted. Waiting for owner approval.");
       refetch();
       qc.invalidateQueries({ queryKey: ["withdrawals"] });
     } catch (e) {
@@ -388,13 +388,16 @@ function Withdraw() {
                   <p className="text-xs text-muted-foreground">{new Date(h.created_at).toLocaleString()}</p>
                 </div>
                 {h.status === "paid" ? (
-                  <button type="button" onClick={() => openLink(viewUrl)} className="history-view-button">
-                    View <ExternalLink className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <span className="history-status is-sent">Sent</span>
+                    <button type="button" onClick={() => openLink(viewUrl)} className="history-view-button">
+                      View <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ) : h.status === "rejected" ? (
                   <span className="history-status is-rejected">Rejected</span>
                 ) : (
-                  <span className="history-status is-pending"><Clock3 className="h-3.5 w-3.5" /> Pending</span>
+                  <span className="history-status is-pending"><Clock3 className="h-3.5 w-3.5" /> {withdrawalStatusLabel(h.status)}</span>
                 )}
               </div>
             );

@@ -9,7 +9,21 @@ export function coinsForWithdrawUsd(usd: number): number {
   return Math.round((Math.floor(usd * 100) / 100) * COINS_PER_USD);
 }
 
-/** Every withdrawal shows "Pending" until the payout is paid (then "View") or rejected. */
+/** Any request not paid or rejected stays in the live history poll. */
 export function isPendingWithdrawal(status: string): boolean {
   return status !== "paid" && status !== "rejected";
+}
+
+/** Human-readable status shown in withdrawal history. */
+export function withdrawalStatusLabel(status: string): string {
+  switch (status) {
+    case "pending_approval": return "Waiting for Approval";
+    case "pending_auto":
+    case "processing": return "Processing";
+    case "pending_review":
+    case "payout_failed_review": return "Manual Review";
+    case "paid": return "Sent";
+    case "rejected": return "Rejected";
+    default: return "Pending";
+  }
 }

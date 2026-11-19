@@ -31,12 +31,21 @@ The workflow uses Pages project shooting-master and API CORS origin https://shoo
 
 ## Automatic USDT BEP-20 payouts
 
-Automatic payouts are currently **disabled on the Render backend**. New withdrawals are therefore routed to manual review until the queue cutover is complete. The legacy Cloudflare Worker is being disabled (no workers.dev route, Queue consumer, or Cron trigger). Cloudflare Pages remains the frontend host. Keep legacy Queue resources only until the Render cutover audit is complete.
+Automatic payouts are currently **disabled on the Render backend**. New withdrawal requests are held as `pending_approval`; the backend does not enqueue or send a transfer until the owner approves it in the Telegram bot. If automatic payout configuration is disabled or incomplete, the Approve button safely refuses to queue a payment. The legacy Cloudflare Worker is being disabled (no workers.dev route, Queue consumer, or Cron trigger). Cloudflare Pages remains the frontend host. Keep legacy Queue resources only until the Render cutover audit is complete.
 
 Do not enable Render automatic payouts until the old Cloudflare payout consumer and scheduled recovery are confirmed paused/drained and all pending withdrawals have been reconciled. This prevents two services from attempting transactions with the same BNB treasury nonce. Once safe, create a dedicated BNB Smart Chain treasury wallet used only by the payout backend, fund it with the configured token and enough BNB for gas, and add the secrets to the Render Web Service Environment (not to frontend variables).
 
+### Owner approval workflow
+
+Add `ADMIN_TELEGRAM_IDS` to the Render Web Service environment. Set it to your own numeric Telegram user ID (not your @username); keep just your ID for the single-owner setup. Open the Shooting Master bot in Telegram and press **Start** once so the bot is allowed to send you private approval messages.
+
+Each valid withdrawal reserves the player's coins and sends you a private message containing the request, player, full destination wallet, amount, and **Approve & Send** / **Reject & Refund** buttons. Only Telegram IDs in `ADMIN_TELEGRAM_IDS` can use those buttons. Approval is a one-time atomic state transition; rejection refunds the reserved coins exactly once. An approval is queued only when `PAYOUT_ENABLED=true`, the dedicated treasury key and HTTPS BNB Smart Chain RPC are configured, and both the per-withdrawal and daily limits pass. The public channel announcement is sent only after the existing receipt check confirms the exact BEP-20 USDT Transfer event. The app displays **Sent** only after that confirmation.
+
+If the bot cannot deliver the private approval notice, the request is cancelled and the reserved coins are returned. Never share your Telegram bot token or treasury private key in chat.
+
 When the payout cutover is approved, add these Render Web Service environment variables:
 
+- `ADMIN_TELEGRAM_IDS` — the owner's numeric Telegram user ID; use one ID for single-owner approval.
 - `PAYOUT_PRIVATE_KEY` — dedicated treasury wallet's 32-byte EVM private key in `0x...` format.
 - `BSC_RPC_URL` — trusted HTTPS BNB Smart Chain mainnet RPC endpoint.
 - `PAYOUT_ENABLED=true` — enable only after the Cloudflare consumer is drained/paused and the queue is reconciled.
@@ -72,7 +81,7 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 
 ## Operational and security limits
 
-- Withdrawals atomically reserve coins. When explicitly enabled and fully configured, eligible USDT BEP-20 withdrawals are signed by the backend treasury and sent through the Cloudflare Queue; otherwise requests remain in manual review. Automatic payouts are off by default and require the secrets and activation steps below.
+- Withdrawals atomically reserve coins and wait for owner approval in a private Telegram bot chat. Rejection refunds coins exactly once. Only an authorized owner approval can enqueue the payout; the app shows Sent only after a confirmed BNB Chain transfer. Automatic payouts remain off by default and require the secrets and activation steps below.
 - AdsGram rewards are credited only after the protected server-to-server Reward URL callback consumes a pending one-time session. AdsGram's documented callback has no signature or unique event ID, so the shared-secret URL is not a cryptographically signed receipt.
 - The Battle Arena game is client-rendered. Server-issued one-time sessions, target limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
 - The leaderboard shows up to 50 players who played at least 1 game this season; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
