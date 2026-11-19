@@ -558,7 +558,6 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
   }finally{db.close();}
 }
 
-async function telegramWebhook(request:Request,env:Env){
 function telegramLink(value?:string):string|null{
   const url=value?.trim()||"";
   return /^https:\/\/t\.me\/[A-Za-z0-9_+.-]+(?:\?[A-Za-z0-9_=&%-]+)?$/.test(url)?url:null;
@@ -570,6 +569,8 @@ async function telegramWebhook(request:Request,env:Env){
   if(!equal(received,expected))return json({error:"Unauthorized"},401);
   let update:Row;
   try{update=await request.json() as Row;}catch{return json({error:"Invalid update"},400);}
+  const callback=update.callback_query as Row|undefined;
+  if(callback)return handleWithdrawalApprovalCallback(callback,env);
   const message=update.message as Row|undefined;
   const chat=message?.chat as Row|undefined;
   const command=typeof message?.text==="string"?message.text.trim():"";
