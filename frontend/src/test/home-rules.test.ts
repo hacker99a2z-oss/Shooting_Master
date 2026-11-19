@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arenaPlayButtonLabel, COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
+import { arenaPlayButtonLabel, formatAdCooldown, COINS_PER_ENEMY, DAILY_GAME_GOALS, dailyGamesProgress } from "@/lib/home-rules";
 
 describe("home Daily Games goals", () => {
   it("first goal is 10 games and pays $0.03", () => expect(DAILY_GAME_GOALS[0]).toEqual({ target: 10, rewardUsd: 0.03 }));
@@ -36,7 +36,16 @@ describe("Battle Arena play button", () => {
   it("requires a rewarded ad after the daily free game is used", () => {
     expect(arenaPlayButtonLabel(false)).toBe("Watch Ads to Play");
   });
-  it("shows a busy label while loading or verifying an ad", () => {
-    expect(arenaPlayButtonLabel(false, "Verifying ad…")).toBe("Verifying ad…");
+  it("shows the server cooldown on the button after a completed game", () => {
+    expect(arenaPlayButtonLabel(false, 150)).toBe("Watch Ads to Play (02:30)");
+    expect(arenaPlayButtonLabel(false, 9)).toBe("Watch Ads to Play (00:09)");
+  });
+  it("removes the timer when the server deadline has passed", () => {
+    expect(arenaPlayButtonLabel(false, 0)).toBe("Watch Ads to Play");
+  });
+  it("formats remaining cooldown without going below zero", () => {
+    expect(formatAdCooldown(150)).toBe("02:30");
+    expect(formatAdCooldown(61.2)).toBe("01:02");
+    expect(formatAdCooldown(-1)).toBe("00:00");
   });
 });

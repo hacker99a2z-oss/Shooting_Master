@@ -51,7 +51,7 @@ function useCoinGain(coins: number | undefined) {
 }
 
 function Home() {
-  const { data: me, error } = usePlayer();
+  const { data: me, error, dataUpdatedAt } = usePlayer();
   const coinView = useCoinGain(me?.coins);
   const telegramUser = telegramUserPreview();
   const displayName = me?.name ?? telegramUser?.first_name;
@@ -61,7 +61,19 @@ function Home() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [playBusy, setPlayBusy] = useState(false);
-  const [playStatus, setPlayStatus] = useState("");
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // Estimate current server time from the last authenticated player response.
+  // This remains correct across route changes and a closed/reopened Telegram app.
+  const estimatedServerNow = me
+    ? me.serverNow + Math.max(0, clockNow - (dataUpdatedAt || clockNow))
+    : clockNow;
+  const adCooldownSeconds = me && !me.canPlayFree
+    ? Math.max(0, Math.ceil((me.adReadyAt - estimatedServerNow) / 1_000))
+    : 0;
   const [claiming, setClaiming] = useState<number | null>(null);
   const [claimError, setClaimError] = useState("");
   const goals = DAILY_GAME_GOALS.map((g) => ({
@@ -71,7 +83,6 @@ function Home() {
   const playArena = async () => {
     if (playBusy) return;
     setPlayBusy(true);
-    setPlayStatus("");
     let adSessionId = "";
     let adIsShowing = false;
     let exitCancelSent = false;
@@ -96,7 +107,6 @@ function Home() {
         return;
       }
 
-      setPlayStatus("Preparing rewarded ad…");
       const ad = await startAdPlay(credentials);
       adSessionId = ad.adSessionId;
 
@@ -104,7 +114,6 @@ function Home() {
         window.addEventListener("pagehide", cancelIfAppCloses);
         window.addEventListener("beforeunload", cancelIfAppCloses);
         adIsShowing = true;
-        setPlayStatus("Watch the full ad to unlock your game…");
         let result;
         try {
           result = await showRewardAd();
@@ -117,14 +126,11 @@ function Home() {
           throw new Error(result.description || "Please watch the full ad to unlock the game.");
         }
 
-        setPlayStatus("Waiting for AdsGram server verification…");
         // Client completion only changes the session to awaiting_postback.
         // Only AdsGram's Reward URL callback can mark it rewarded.
         await grantAdPlay({ ...credentials, adSessionId }).catch(() => undefined);
       } else if (ad.waitingVerification) {
-        setPlayStatus("Checking the previous ad with AdsGram…");
       } else {
-        setPlayStatus("Starting your verified game…");
       }
 
       const deadline = Date.now() + 90_000;
@@ -154,7 +160,6 @@ function Home() {
         return;
       }
 
-      setPlayStatus("Starting your verified game…");
       const game = await startGameAfterAd({ ...credentials, adSessionId });
       qc.setQueryData(["pending-arena-session"], game);
       await qc.invalidateQueries({ queryKey: ["me"] });
@@ -168,7 +173,6 @@ function Home() {
       window.removeEventListener("pagehide", cancelIfAppCloses);
       window.removeEventListener("beforeunload", cancelIfAppCloses);
       setPlayBusy(false);
-      setPlayStatus("");
     }
   };
 
@@ -246,13 +250,12 @@ function Home() {
           type="button"
           className="arena-play-button"
           onClick={() => void playArena()}
-          disabled={playBusy || !me}
+          disabled={playBusy || !me || (!me.canPlayFree && adCooldownSeconds > 0)}
           aria-live="polite"
         >
           {playBusy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" fill="currentColor" />}
-          <span>{arenaPlayButtonLabel(Boolean(me?.canPlayFree), playBusy ? (playStatus || "Starting…") : "")}</span>
+          <span>{arenaPlayButtonLabel(Boolean(me?.canPlayFree), adCooldownSeconds)}</span>
         </button>
-        {playStatus && <p className="arena-play-status" role="status">{playStatus}</p>}
       </section>
 
       <div className="home-stats-row">

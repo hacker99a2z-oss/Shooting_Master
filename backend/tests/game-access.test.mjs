@@ -21,3 +21,12 @@ test("only created or awaiting-postback sessions remain active", () => {
   assert.equal(activeAdSession("cancelled", 20_000, 10_000), false);
   assert.equal(activeAdSession("rewarded", 20_000, 10_000), false);
 });
+
+import { AD_COOLDOWN_MS, nextAdReadyAt } from "../game-access.ts";
+
+test("the next ad is locked for exactly 2.5 minutes from the completed-game server timestamp", () => {
+  const completedAt = 1_000_000;
+  assert.equal(AD_COOLDOWN_MS, 150_000);
+  assert.equal(nextAdReadyAt(completedAt), 1_150_000);
+  assert.equal(nextAdReadyAt(completedAt) - completedAt, 150_000);
+});

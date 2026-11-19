@@ -20,8 +20,17 @@ export function dailyGamesProgress(gamesToday: number, target: number, claimedTo
   };
 }
 
-/** Label for the Home Battle Arena action, based on the server-owned daily free-play flag. */
-export function arenaPlayButtonLabel(canPlayFree: boolean, busyLabel = ""): string {
-  if (busyLabel) return busyLabel;
-  return canPlayFree ? "Play (Daily 1 time)" : "Watch Ads to Play";
+/** Format a remaining server-supplied cooldown as mm:ss. */
+export function formatAdCooldown(remainingSeconds: number): string {
+  const total = Math.max(0, Math.ceil(Number(remainingSeconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Home Battle Arena action label, based on server-owned free-play and ad cooldown state. */
+export function arenaPlayButtonLabel(canPlayFree: boolean, cooldownSeconds = 0): string {
+  if (canPlayFree) return "Play (Daily 1 time)";
+  const remaining = Math.max(0, Math.ceil(Number(cooldownSeconds) || 0));
+  return remaining > 0 ? `Watch Ads to Play (${formatAdCooldown(remaining)})` : "Watch Ads to Play";
 }

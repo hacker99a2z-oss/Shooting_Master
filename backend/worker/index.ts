@@ -15,7 +15,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { assessBep20PayoutBalances } from "../payout-preflight.ts";
 import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
-import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible } from "../game-access.ts";
+import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible, nextAdReadyAt } from "../game-access.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 
@@ -41,7 +41,7 @@ const DAILY_GOAL_REWARDS_CENTS:Record<number,number>={10:3,20:4};
 function claimedGoalsToday(row:Row):number[]{return row.claimed_goals_date===today()?String(row.claimed_goals??"").split(",").filter(Boolean).map(Number):[];}
 const DAILY_GAMES_GOAL=100, BONUS_MIN_CENTS=1, BONUS_MAX_CENTS=5;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10;
-const AD_COOLDOWN_MS=150000,MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=300000;
+const MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=300000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
 type AuthUser={id:number;firstName:string;username:string|null;photoUrl:string|null};
 type Row=Record<string,any>;
@@ -117,9 +117,11 @@ async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:numb
   const sessionType=Number(session.uses_extra_play);
   if(sessionType!==0&&sessionType!==1&&sessionType!==2)throw new Error("Invalid game session type");
   const reward=kills*COINS_PER_KILL,sid=seasonId(),t=today();
-  const cooldown=Number(session.uses_extra_play)>0?Date.now()+AD_COOLDOWN_MS:null;
-  await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=CASE WHEN ? IS NULL THEN ad_ready_at ELSE ? END WHERE tg_id=?",
-    args:[reward,sid,reward,reward,sid,score,t,t,cooldown,cooldown,tgId]});
+  // Start the server-owned 2.5-minute ad cooldown for every successfully completed game.
+  // Coin credit and ad_ready_at are committed atomically in the same Turso transaction.
+  const cooldown=nextAdReadyAt(Date.now());
+  await tx.execute({sql:"UPDATE players SET coins=coins+?,season_coins=CASE WHEN season_id=? THEN season_coins+? ELSE ? END,season_id=?,games_played=games_played+1,best_score=MAX(best_score,?),daily_games=CASE WHEN daily_games_date=? THEN daily_games+1 ELSE 1 END,daily_games_date=?,ad_ready_at=? WHERE tg_id=?",
+    args:[reward,sid,reward,reward,sid,score,t,t,cooldown,tgId]});
   let p=await playerRow(db,tgId,tx);
   if(p&&p.referred_by!=null&&Number(p.games_played)>=REFERRAL_GAMES_NEEDED&&Number(p.referral_paid)===0){
     const mark=await tx.execute({sql:"UPDATE players SET referral_paid=1 WHERE tg_id=? AND referral_paid=0",args:[tgId]});
