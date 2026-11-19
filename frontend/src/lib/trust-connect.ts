@@ -33,6 +33,22 @@ export function currentDeviceIsPhone(): boolean {
   return isPhoneDevice(webApp()?.platform, navigator.userAgent);
 }
 
+/** Desktop Telegram Mini Apps run embedded; injected extensions must connect from a top-level tab. */
+export function shouldUseExternalWalletBridge(platform?: string, userAgent?: string, embedded = false): boolean {
+  const p=(platform??"").toLowerCase();
+  const desktopShell=["tdesktop","macos","windows","linux","unigram"].includes(p);
+  return !isPhoneDevice(platform,userAgent) && (embedded || desktopShell);
+}
+
+export function currentDeviceNeedsExternalWalletBridge(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined" || currentDeviceIsPhone()) return false;
+  const platform=String(webApp()?.platform??"").toLowerCase();
+  const telegramDesktop=["tdesktop","macos","windows","linux","unigram"].includes(platform);
+  let embedded=false;
+  try{embedded=window.top!==window.self;}catch{embedded=true;}
+  return shouldUseExternalWalletBridge(platform,navigator.userAgent,embedded||telegramDesktop);
+}
+
 async function initWalletConnect(showQrModal: boolean) {
   const configured = import.meta.env["VITE_WALLETCONNECT_PROJECT_ID"];
   const projectId =

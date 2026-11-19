@@ -139,6 +139,15 @@ function prize(rank:number){
 function randomBonusCents(){return BONUS_MIN_CENTS+Math.floor(Math.random()*(BONUS_MAX_CENTS-BONUS_MIN_CENTS+1));}
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
 
+function newWalletConnectTicket(){
+  const random=new Uint8Array(32);
+  crypto.getRandomValues(random);
+  return hex(random);
+}
+async function walletConnectTicketHash(ticket:string){
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes(ticket))));
+}
+
 const BSC_CHAIN_ID=56;
 const USDT_BEP20_CONTRACT="0x55d398326f99059fF775485246999027B3197955" as const;
 const AUTO_PAYOUT_MAX_USD=10;
@@ -677,11 +686,58 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   if(request.method!=="POST")return json({error:"Method not allowed"},405);
   let body:Record<string,any>;
   try{body=await request.json() as Record<string,any>;}catch{return json({error:"Invalid JSON body"},400);}
+
+  // This endpoint is authorized only by a short-lived, single-use ticket created
+  // after validating Telegram initData in the embedded Mini App.
+  if(path==="/api/wallet/connect-external"){
+    const ticket=typeof body.ticket==="string"?body.ticket:"";
+    if(!/^[a-f0-9]{64}$/i.test(ticket))return json({error:"Invalid or expired wallet connection link."},400);
+    let destination;
+    try{destination=destinationInput(body);}catch(e){return json({error:e instanceof Error?e.message:"Invalid wallet destination."},400);}
+    const db=dbFor(env);
+    try{
+      const ticketHash=await walletConnectTicketHash(ticket);
+      const saved=await txRun(db,async(tx)=>{
+        const selected=await tx.execute({sql:"SELECT tg_id FROM wallet_connect_tickets WHERE ticket_hash=? AND consumed_at IS NULL AND expires_at>?",args:[ticketHash,Date.now()]});
+        const row=selected.rows[0] as Row|undefined;
+        if(!row)throw new Error("Invalid or expired wallet connection link.");
+        const consumedAt=Date.now();
+        const consumed=await tx.execute({sql:"UPDATE wallet_connect_tickets SET consumed_at=? WHERE ticket_hash=? AND consumed_at IS NULL AND expires_at>?",args:[consumedAt,ticketHash,consumedAt]});
+        if(consumed.rowsAffected!==1)throw new Error("This wallet connection link has already been used.");
+        const tgId=Number(row.tg_id),updatedAt=new Date().toISOString();
+        await tx.execute({sql:"INSERT INTO wallet_destinations (tg_id,address,asset,network,chain_id,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET address=excluded.address,asset=excluded.asset,network=excluded.network,chain_id=excluded.chain_id,updated_at=excluded.updated_at",args:[tgId,destination.address,destination.asset,destination.network,destination.chainId,updatedAt]});
+        return {address:destination.address,asset:destination.asset,network:destination.network,chainId:destination.chainId,updatedAt};
+      });
+      return json({ok:true,destination:saved});
+    }catch(e){
+      const message=e instanceof Error?e.message:"Wallet connection could not be saved.";
+      const status=/invalid or expired|already been used/i.test(message)?410:400;
+      return json({error:message},status);
+    }finally{db.close();}
+  }
   let user:AuthUser;
   try{user=await verifyTelegram(body.initData,env);}catch(e){return json({error:e instanceof Error?e.message:"Authentication failed"},401);}
   const db=dbFor(env);
   try{
     if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:"")));
+
+    if(path==="/api/wallet/connect-ticket"){
+      const now=Date.now(),expiresAt=now+5*60_000,ticket=newWalletConnectTicket(),ticketHash=await walletConnectTicketHash(ticket);
+      await db.execute({sql:"DELETE FROM wallet_connect_tickets WHERE expires_at<? OR created_at<?",args:[now-60_000,now-24*60*60_000]});
+      await db.execute({sql:"INSERT INTO wallet_connect_tickets (ticket_hash,tg_id,created_at,expires_at,consumed_at) VALUES (?,?,?,?,NULL)",args:[ticketHash,user.id,now,expiresAt]});
+      const base=env.APP_ORIGIN.replace(/\\/+$/,"");
+      return json({ticket,expiresAt,url:base+"/connect-wallet?ticket="+encodeURIComponent(ticket)});
+    }
+    if(path==="/api/wallet/connect-ticket/status"){
+      const ticket=typeof body.ticket==="string"?body.ticket:"";
+      if(!/^[a-f0-9]{64}$/i.test(ticket))return json({error:"Invalid wallet connection ticket."},400);
+      const ticketHash=await walletConnectTicketHash(ticket);
+      const result=await db.execute({sql:"SELECT t.consumed_at,t.expires_at,d.address,d.asset,d.network,d.chain_id AS chainId,d.updated_at AS updatedAt FROM wallet_connect_tickets t LEFT JOIN wallet_destinations d ON d.tg_id=t.tg_id WHERE t.ticket_hash=? AND t.tg_id=? AND t.created_at>?",args:[ticketHash,user.id,Date.now()-10*60_000]});
+      const row=result.rows[0] as Row|undefined;
+      if(!row)return json({error:"Wallet connection ticket not found."},404);
+      const destination=row.address?{address:String(row.address),asset:"USDT",network:"BEP20",chainId:Number(row.chainId),updatedAt:String(row.updatedAt)}:null;
+      return json({completed:row.consumed_at!=null,expired:row.consumed_at==null&&Number(row.expires_at)<=Date.now(),destination});
+    }
     if(path==="/api/wallet/destination"){
       const result=await db.execute({sql:"SELECT address,asset,network,chain_id AS chainId,updated_at AS updatedAt FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
       return json({destination:result.rows[0]??null});

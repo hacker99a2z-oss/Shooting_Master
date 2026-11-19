@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trustAppConnectLink, isPhoneDevice, isTrustWalletInjectedProvider, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
+import { trustAppConnectLink, isPhoneDevice, shouldUseExternalWalletBridge, isTrustWalletInjectedProvider, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 describe("Trust Wallet WalletConnect universal link", () => {
   it("uses the official HTTPS universal link with an encoded WalletConnect URI", () => {
@@ -25,6 +25,18 @@ describe("phone detection", () => {
 
   it("falls back to the user agent for mobile browsers", () => {
     expect(isPhoneDevice(undefined, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe(true);
+  });
+});
+
+describe("embedded wallet extension bridge routing", () => {
+  it("routes Telegram Desktop through a top-level browser page", () => {
+    expect(shouldUseExternalWalletBridge("tdesktop", "", false)).toBe(true);
+  });
+  it("routes any desktop embedded frame through a top-level browser page", () => {
+    expect(shouldUseExternalWalletBridge("web", "", true)).toBe(true);
+  });
+  it("keeps mobile Telegram on the existing WalletConnect flow", () => {
+    expect(shouldUseExternalWalletBridge("android", "", true)).toBe(false);
   });
 });
 

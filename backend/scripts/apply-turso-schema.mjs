@@ -53,6 +53,10 @@ try {
   await db.executeMultiple(walletSql);
   console.log("Turso schema migration 0006 applied.");
 
+  const walletConnectTicketSql = await readFile(new URL("../migrations/0011_wallet_connect_tickets.sql", import.meta.url), "utf8");
+  await db.executeMultiple(walletConnectTicketSql);
+  console.log("Turso schema migration 0011 applied.");
+
   const miningMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=7 LIMIT 1");
   if (!miningMigration.rows.length) {
     const miningSql = await readFile(new URL("../migrations/0007_energy_gold_mining.sql", import.meta.url), "utf8");

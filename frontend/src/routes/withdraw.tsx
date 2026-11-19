@@ -5,12 +5,12 @@ import { toast } from "sonner";
 import { BadgeCheck, CheckCircle2, Clock3, ExternalLink, Headphones, History, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { usePlayer } from "@/hooks/use-player";
-import { getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type Withdrawal } from "@/lib/api.functions";
+import { createWalletConnectTicket, getWalletConnectTicketStatus, getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type WalletConnectTicket, type Withdrawal } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
 import { checkWithdrawalEligibility, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
+import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, currentDeviceNeedsExternalWalletBridge, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -144,6 +144,9 @@ function Withdraw() {
   const [isBscNetwork, setIsBscNetwork] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [pendingWalletConnectUrl, setPendingWalletConnectUrl] = useState<string | null>(null);
+  const [walletBridgeTicket, setWalletBridgeTicket] = useState<WalletConnectTicket | null>(null);
+  const [pendingWalletBridgeTicket, setPendingWalletBridgeTicket] = useState<string | null>(null);
+  const [externalWalletVerified, setExternalWalletVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nudge, setNudge] = useState(0);
   const [showConnectHint, setShowConnectHint] = useState(false);
@@ -161,7 +164,7 @@ function Withdraw() {
     minimumUsd: MIN_WITHDRAW_USD,
     withdrawBalanceCents,
     coins,
-    walletConnected: connected && Boolean(walletProvider) && walletAddress.toLowerCase() === lastWalletAddress.toLowerCase(),
+    walletConnected: connected && (Boolean(walletProvider) || externalWalletVerified) && walletAddress.toLowerCase() === lastWalletAddress.toLowerCase(),
   });
 
   // Restore the server-saved address and approved wallet session. Prepare a fresh mobile
@@ -176,6 +179,15 @@ function Withdraw() {
     }).catch(() => {});
 
     (async () => {
+      if (currentDeviceNeedsExternalWalletBridge()) {
+        try {
+          const ticket = await createWalletConnectTicket(auth());
+          if (!cancelled) setWalletBridgeTicket(ticket);
+        } catch {
+          if (!cancelled) toast.error("Could not prepare the secure browser wallet connection.");
+        }
+        return;
+      }
       const injected = getInjectedTrustWallet();
       const provider = injected
         ? ((await injected.request({ method: "eth_accounts" }).then(firstAccount).catch(() => "")) ? injected : null)
@@ -207,6 +219,46 @@ function Withdraw() {
     };
   }, []);
 
+
+  useEffect(() => {
+    if (!pendingWalletBridgeTicket) return;
+    let active=true,inFlight=false,attempts=0;
+    const poll=async()=>{
+      if(!active||inFlight)return;
+      inFlight=true;
+      try{
+        const status=await getWalletConnectTicketStatus({...auth(),ticket:pendingWalletBridgeTicket});
+        if(!active)return;
+        if(status.completed&&status.destination&&validBep20Address(status.destination.address)&&status.destination.chainId===BSC_CHAIN_ID){
+          setWalletAddress(status.destination.address);
+          setLastWalletAddress(status.destination.address);
+          setIsBscNetwork(true);
+          setWalletProvider(null);
+          setExternalWalletVerified(true);
+          setPendingWalletBridgeTicket(null);
+          setWalletBridgeTicket(null);
+          toast.success("Trust Wallet extension connected.");
+          qc.invalidateQueries({queryKey:["wallet-destination"]});
+          return;
+        }
+        if(status.expired){
+          setPendingWalletBridgeTicket(null);
+          toast.error("Wallet connection link expired. Tap Connect again.");
+          return;
+        }
+      }catch{/* Continue polling while the one-time ticket is valid. */}
+      finally{inFlight=false;}
+      attempts++;
+      if(active&&attempts>=150){
+        setPendingWalletBridgeTicket(null);
+        toast.info("Wallet connection was not completed. Tap Connect to try again.");
+      }
+    };
+    void poll();
+    const timer=window.setInterval(()=>void poll(),2000);
+    return ()=>{active=false;window.clearInterval(timer);};
+  },[pendingWalletBridgeTicket,qc]);
+
   useEffect(() => {
     if (!walletProvider) return;
     const handleAccountsChanged = (...args: unknown[]) => {
@@ -236,6 +288,24 @@ function Withdraw() {
 
   const connectTrustWallet = async () => {
     if (connecting) return;
+    if (connected && externalWalletVerified && !walletProvider) {
+      setWalletAddress("");
+      setIsBscNetwork(false);
+      setExternalWalletVerified(false);
+      toast.success("Wallet disconnected from Shooting Master. Your saved destination is unchanged.");
+      return;
+    }
+    if (currentDeviceNeedsExternalWalletBridge()) {
+      if (!walletBridgeTicket || walletBridgeTicket.expiresAt <= Date.now()) {
+        toast.info("Secure browser connection is preparing. Tap Connect again in a moment.");
+        void createWalletConnectTicket(auth()).then(setWalletBridgeTicket).catch(() => toast.error("Could not prepare the browser wallet connection."));
+        return;
+      }
+      setPendingWalletBridgeTicket(walletBridgeTicket.ticket);
+      openLink(walletBridgeTicket.url);
+      toast.info("Finish connecting in the new Brave browser tab. This page will update automatically.");
+      return;
+    }
     if (connected && walletProvider) {
       setConnecting(true);
       try {

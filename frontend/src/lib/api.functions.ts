@@ -28,3 +28,8 @@ export const getWithdrawals=(data:Auth)=>post<Withdrawal[]>("withdrawals",data);
 export type WalletDestination={address:string;asset:"USDT";network:"BEP20";chainId:56;updatedAt:string};
 export const getWalletDestination=(data:Auth)=>post<{destination:WalletDestination|null}>("wallet/destination",data);
 export const saveWalletDestination=(data:Auth & {address:string;asset:"USDT";network:"BEP20"})=>post<{destination:WalletDestination}>("wallet/save",data);
+
+export type WalletConnectTicket={ticket:string;expiresAt:number;url:string};
+export const createWalletConnectTicket=(data:Auth)=>post<WalletConnectTicket>("wallet/connect-ticket",data);
+export const getWalletConnectTicketStatus=(data:Auth & {ticket:string})=>post<{completed:boolean;expired:boolean;destination:WalletDestination|null}>("wallet/connect-ticket/status",data);
+export const completeExternalWalletConnect=(data:{ticket:string;address:string;asset:"USDT";network:"BEP20"})=>post<{ok:boolean;destination:WalletDestination}>("wallet/connect-external",data);

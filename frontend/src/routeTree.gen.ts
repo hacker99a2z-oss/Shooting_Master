@@ -14,6 +14,7 @@ import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as ReferRouteImport } from './routes/refer'
 import { Route as WithdrawRouteImport } from './routes/withdraw'
+import { Route as ConnectWalletRouteImport } from './routes/connect-wallet'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const WithdrawRoute = WithdrawRouteImport.update({
   path: '/withdraw',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnectWalletRoute = ConnectWalletRouteImport.update({
+  id: '/connect-wallet',
+  path: '/connect-wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
+  '/connect-wallet': typeof ConnectWalletRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
+  '/connect-wallet': typeof ConnectWalletRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,14 @@ export interface FileRoutesById {
   '/play': typeof PlayRoute
   '/refer': typeof ReferRoute
   '/withdraw': typeof WithdrawRoute
+  '/connect-wallet': typeof ConnectWalletRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
+  fullPaths: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw' | '/connect-wallet'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
-  id: '__root__' | '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw'
+  to: '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw' | '/connect-wallet'
+  id: '__root__' | '/' | '/leaderboard' | '/play' | '/refer' | '/withdraw' | '/connect-wallet'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -116,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WithdrawRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connect-wallet': {
+      id: '/connect-wallet'
+      path: '/connect-wallet'
+      fullPath: '/connect-wallet'
+      preLoaderRoute: typeof ConnectWalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +141,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlayRoute: PlayRoute,
   ReferRoute: ReferRoute,
   WithdrawRoute: WithdrawRoute,
+  ConnectWalletRoute: ConnectWalletRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
