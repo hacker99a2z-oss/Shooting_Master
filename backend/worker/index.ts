@@ -524,6 +524,110 @@ async function editTelegramApprovalMessage(env:Env,chatId:number|string,messageI
   });}catch(error){console.error("[withdrawal approval] approval message update failed",error);}
 }
 
+async function editTelegramApprovalMessageWithKeyboard(env:Env,chatId:number|string,messageId:number,text:string,keyboard:Row[][]){
+  try{
+    await telegramCall(env,"editMessageText",{
+      chat_id:chatId,message_id:messageId,text,parse_mode:"HTML",disable_web_page_preview:true,
+      reply_markup:{inline_keyboard:keyboard}
+    });
+  }catch(error){console.error("[withdrawal approval] approval message update failed",error);}
+}
+
+function manualReviewKeyboard(id:string){
+  return [
+    [{text:"🔁 Retry & Send",callback_data:"wd:retry:"+id}],
+    [{text:"❌ Reject & Refund",callback_data:"wd:reject:"+id}],
+  ];
+}
+
+async function sendManualReviewList(env:Env,adminId:number){
+  const db=dbFor(env);
+  try{
+    const result=await db.execute({
+      sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,payout_error,payout_tx_hash,payout_raw_tx FROM withdrawals WHERE status IN ('pending_review','payout_failed_review') ORDER BY created_at ASC LIMIT 20"
+    });
+    if(!result.rows.length){
+      await telegramCall(env,"sendMessage",{chat_id:adminId,text:"✅ No withdrawals are currently waiting in Manual Review."});
+      return;
+    }
+    for(const item of result.rows as Row[]){
+      const id=String(item.id);
+      const hasHash=typeof item.payout_tx_hash==="string"&&String(item.payout_tx_hash).length>0;
+      const hasRaw=typeof item.payout_raw_tx==="string"&&String(item.payout_raw_tx).length>0;
+      const retrySafe=!hasHash&&!hasRaw;
+      const lines=[
+        "⚠️ <b>WITHDRAWAL MANUAL REVIEW</b>","",
+        "<b>Request:</b> <code>"+escapeHtml(id)+"</code>",
+        "<b>Status:</b> <code>"+escapeHtml(String(item.status))+"</code>",
+        "<b>Amount:</b> $"+Number(item.usd).toFixed(2)+" USDT",
+        "<b>Coins reserved:</b> "+Number(item.coins).toLocaleString("en-US"),
+        "<b>Destination:</b> <code>"+escapeHtml(String(item.wallet))+"</code>",
+        "<b>Reason:</b> "+escapeHtml(String(item.payout_error||"No reason was recorded.")),
+        "<b>Transaction:</b> "+(hasHash?"<code>"+escapeHtml(String(item.payout_tx_hash))+"</code>":"No transaction hash"),
+        "",
+        retrySafe
+          ?"No signed transaction is recorded. After funding the treasury, run the balance check and retry."
+          :"A signed transaction is recorded. Check its BNB Chain status before retrying or refunding."
+      ];
+      await telegramCall(env,"sendMessage",{
+        chat_id:adminId,text:lines.join("\n"),parse_mode:"HTML",disable_web_page_preview:true,
+        reply_markup:retrySafe?{inline_keyboard:manualReviewKeyboard(id)}:undefined
+      });
+    }
+  }finally{db.close();}
+}
+
+async function retryManualReviewWithdrawal(db:any,env:Env,id:string,adminId:number){
+  if(!payoutConfigured(env))throw new PayoutSafetyError("Automatic payouts are disabled or payout credentials are incomplete.");
+  const selected=await db.execute({
+    sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,payout_tx_hash,payout_raw_tx,payout_asset,payout_network FROM withdrawals WHERE id=? LIMIT 1",
+    args:[id]
+  });
+  const row=selected.rows[0] as Row|undefined;
+  if(!row)throw new Error("Withdrawal request not found.");
+  if(!["pending_review","payout_failed_review"].includes(String(row.status)))throw new Error("This request is not waiting in Manual Review.");
+  if(row.payout_tx_hash||row.payout_raw_tx)throw new Error("A signed transaction exists. Check its BNB Chain status before retrying.");
+  if(String(row.payout_asset)!=="USDT"||String(row.payout_network)!=="BEP20")throw new PayoutSafetyError("This request is not a USDT BEP-20 withdrawal.");
+
+  const preflight=await preflightBep20Payout(env,Number(row.usd),String(row.wallet));
+  const daily=await db.execute({
+    sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid','payout_failed_review') AND id<>?",
+    args:[today(),id]
+  });
+  const limitError=approvalPayoutLimitError(Number(row.usd),Number(daily.rows[0]?.total??0));
+  if(limitError)throw new PayoutSafetyError(limitError);
+
+  const at=new Date().toISOString();
+  const payout:PayoutMessage={
+    withdrawalId:id,tgId:Number(row.tg_id),usd:Number(row.usd),coins:Number(row.coins),
+    wallet:String(row.wallet),asset:"USDT",network:"BEP20",createdAt:String(row.created_at)
+  };
+  const changed=await txRun(db,async(tx)=>{
+    const update=await tx.execute({
+      sql:"UPDATE withdrawals SET status='pending_auto',payout_error=NULL,payout_updated_at=? WHERE id=? AND status IN ('pending_review','payout_failed_review') AND payout_tx_hash IS NULL AND payout_raw_tx IS NULL",
+      args:[at,id]
+    });
+    if(update.rowsAffected!==1)throw new Error("This request changed while retrying. Refresh /review and check its current status.");
+    await writePayoutEvent(tx,id,"manual_review_retry_approved",{adminTelegramId:adminId,at,preflight});
+    return update.rowsAffected;
+  });
+  if(changed!==1)throw new Error("This request could not be reserved for retry.");
+
+  try{
+    await env.PAYOUT_QUEUE.send(payout);
+  }catch(error){
+    const reason=error instanceof Error?error.message:"Payout queue unavailable";
+    await db.execute({
+      sql:"UPDATE withdrawals SET status='pending_review',payout_error=?,payout_updated_at=? WHERE id=? AND status='pending_auto'",
+      args:[reason.slice(0,500),new Date().toISOString(),id]
+    });
+    await writePayoutEvent(db,id,"manual_review_retry_queue_failed",{reason:reason.slice(0,500),at:new Date().toISOString()});
+    throw new Error("Treasury checks passed, but the payout queue failed: "+reason);
+  }
+  await writePayoutEvent(db,id,"manual_review_retry_queued",{adminTelegramId:adminId,at:new Date().toISOString(),usdtBalance:preflight.usdtBalance,bnbBalance:preflight.bnbBalance});
+  return {usd:Number(row.usd),usdtBalance:preflight.usdtBalance,bnbBalance:preflight.bnbBalance};
+}
+
 async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
   const callbackId=typeof callback.id==="string"?callback.id:"";
   const adminId=Number(callback.from?.id);
