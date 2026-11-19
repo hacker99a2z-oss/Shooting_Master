@@ -1,5 +1,13 @@
 import { webApp } from "@/lib/tg";
 
+const DEFAULT_WALLETCONNECT_PROJECT_ID = "b5a064d2976a1d6913d536cb44021a74";
+export const TRUST_EXTENSION_URL = "https://trustwallet.com/browser-extension";
+
+/** Official Trust Wallet HTTPS universal link for a WalletConnect v2 pairing URI. */
+export function trustAppConnectLink(uri: string): string {
+  return "https://link.trustwallet.com/wc?uri=" + encodeURIComponent(uri);
+}
+
 type Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, listener: (...args: unknown[]) => void) => void;
