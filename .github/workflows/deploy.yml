@@ -83,11 +83,11 @@ jobs:
         run: npm test
       - name: Validate AdsGram Block ID
         env:
-          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
+          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID || '58094' }}
         shell: bash
         run: |
           if [ -z "${VITE_ADSGRAM_BLOCK_ID//[[:space:]]/}" ]; then
-            echo "::error::Missing GitHub Actions repository variable VITE_ADSGRAM_BLOCK_ID. Add it under Settings → Secrets and variables → Actions → Variables, then rerun deployment."
+            echo "::error::AdsGram Unit ID is missing. Configure vars.VITE_ADSGRAM_BLOCK_ID or keep the built-in default 58094."
             exit 1
           fi
           echo "AdsGram Block ID is configured."
@@ -96,7 +96,7 @@ jobs:
         env:
           VITE_API_BASE_URL: https://shooting-master-api-5ao3.onrender.com
           VITE_TELEGRAM_BOT_USERNAME: ${{ steps.telegram.outputs.username }}
-          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID }}
+          VITE_ADSGRAM_BLOCK_ID: ${{ vars.VITE_ADSGRAM_BLOCK_ID || '58094' }}
           VITE_SUPPORT_URL: ${{ vars.VITE_SUPPORT_URL }}
           VITE_PROOF_URL: ${{ vars.VITE_PROOF_URL }}
           VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.VITE_WALLETCONNECT_PROJECT_ID }}
