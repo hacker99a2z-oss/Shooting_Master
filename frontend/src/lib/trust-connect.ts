@@ -63,25 +63,15 @@ async function initWalletConnect(showQrModal: boolean) {
  * HTTPS universal link. Telegram's openLink launches it outside the Mini App;
  * normal mobile browsers hand it to the OS universal-link handler.
  */
-export async function connectTrustWalletSession(): Promise<Provider> {
+export async function connectTrustWalletSession(onConnectLink: (link: string) => void): Promise<Provider> {
   const provider = await initWalletConnect(false);
   if (provider.session) return provider as Provider;
 
+  // WalletConnect creates its URI asynchronously. Do not navigate the Telegram
+  // WebView from this callback: Telegram requires openLink to run from a fresh
+  // user interaction. Hand the link to the UI so the user can tap "Open Trust Wallet".
   provider.on("display_uri", (uri: string) => {
-    const link = trustAppConnectLink(uri);
-    const telegram = webApp();
-
-    try {
-      if (typeof telegram?.openLink === "function") {
-        telegram.openLink(link);
-      } else {
-        window.location.assign(link);
-      }
-    } catch (error) {
-      // Keep the fallback on HTTPS; never navigate the Telegram WebView to a custom scheme.
-      console.warn("[wallet] Trust Wallet universal link could not be opened through Telegram.", error);
-      window.location.assign(link);
-    }
+    onConnectLink(trustAppConnectLink(uri));
   });
 
   await provider.connect();

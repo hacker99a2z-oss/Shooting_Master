@@ -131,6 +131,7 @@ function Withdraw() {
   const [walletProvider, setWalletProvider] = useState<TrustWalletProvider | null>(null);
   const [isBscNetwork, setIsBscNetwork] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [pendingWalletConnectUrl, setPendingWalletConnectUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [nudge, setNudge] = useState(0);
   const [showConnectHint, setShowConnectHint] = useState(false);
@@ -202,7 +203,8 @@ function Withdraw() {
         if (currentDeviceIsPhone()) {
           // Phone: open the Trust Wallet app directly (Play Store / App Store if it is not installed).
           toast.info("Opening Trust Wallet… Approve the Shooting Master connection in the app.");
-          provider = await connectTrustWalletSession();
+          setPendingWalletConnectUrl(null);
+          provider = await connectTrustWalletSession(setPendingWalletConnectUrl);
         } else {
           // PC: connect the Trust Wallet extension, or open its download page when it is missing.
           provider = await findTrustExtension();
@@ -223,6 +225,7 @@ function Withdraw() {
 
       setWalletProvider(provider);
       setWalletAddress(active);
+      setPendingWalletConnectUrl(null);
       setIsBscNetwork(true);
       setShowConnectHint(false);
       saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" }).catch(() => {});
@@ -303,6 +306,22 @@ function Withdraw() {
               {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : connected ? <CheckCircle2 className="h-4 w-4" /> : <TrustWalletLogo />}
               <span>{connecting ? "Connecting…" : connected ? "Connected" : "Connect"}</span>
             </button>
+            {pendingWalletConnectUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  const telegram = window.Telegram?.WebApp;
+                  if (typeof telegram?.openLink === "function") {
+                    telegram.openLink(pendingWalletConnectUrl);
+                  } else {
+                    window.location.assign(pendingWalletConnectUrl);
+                  }
+                }}
+                className="mt-2 w-full rounded-lg border border-primary/50 px-3 py-2 text-xs font-semibold text-primary"
+              >
+                Open Trust Wallet
+              </button>
+            )}
           </div>
         </div>
 

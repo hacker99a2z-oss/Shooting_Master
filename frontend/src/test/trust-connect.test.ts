@@ -8,7 +8,7 @@ describe("Trust Wallet WalletConnect universal link", () => {
     );
   });
 
-  it("never returns a custom trust:// scheme that Telegram WebView can try to load as a page", () => {
+  it("uses HTTPS so Telegram never tries to load a custom trust:// scheme as a page", () => {
     expect(trustAppConnectLink("wc:sample@2")).toMatch(/^https:\/\/link\.trustwallet\.com\/wc\?uri=/);
   });
 });
