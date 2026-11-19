@@ -26,7 +26,7 @@ if (auth().initData) {
       writeCachedPlayer(player);
       return player;
     },
-    staleTime: 10_000,
+    staleTime: 0,
   }).catch(() => {});
 }
 
