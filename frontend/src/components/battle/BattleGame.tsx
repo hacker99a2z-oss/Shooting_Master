@@ -14,6 +14,7 @@ import { BattleGround, BattleWorld } from "./BattleWorld";
 import { BattleControls, createControls, type ControlState } from "./BattleControls";
 import { CHARACTER_URLS, ENEMY_KINDS, WEAPON_FILES, WEAPON_URLS, configureLoader } from "./models";
 import { EnemyView, Effects, HeroView, ProjectileView } from "./views";
+import { QUALITY } from "./quality";
 
 const POOL_PER_KIND = 6;
 const SHOT_POOL = 14;
@@ -140,6 +141,10 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     [battle],
   );
   const lastHud = useRef("");
+  // Reused every frame so the loop does not allocate (less garbage collection stutter on phones).
+  const byId = useMemo(() => new Map<number, EnemyView>(), [world]);
+  const alive = useMemo(() => new Set<number>(), [world]);
+  const used = useMemo(() => ({ arrow: 0, axe: 0, blade: 0, rock: 0 }) as Record<ShotKind, number>, [world]);
 
   useEffect(() => {
     scene.add(world.group);
@@ -159,7 +164,8 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     stepBattle(battle, input, dt);
 
     // 2. Events → one-shot animations and effects.
-    const byId = new Map(world.enemies.filter((v) => v.id >= 0).map((v) => [v.id, v] as const));
+    byId.clear();
+    for (const v of world.enemies) if (v.id >= 0) byId.set(v.id, v);
     for (const ev of battle.events) {
       if (ev.type === "heroFire") world.hero.fire();
       else if (ev.type === "heroHit") world.hero.hit(false);
@@ -176,8 +182,10 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
       } else if (ev.type === "enemyAttack") byId.get(ev.id)?.attack();
       else if (ev.type === "enemyThrow") byId.get(ev.id)?.threw();
       else if (ev.type === "enemySpawn") {
-        const e = battle.enemies.find((x) => x.id === ev.id);
-        const view = e && world.enemies.find((v) => v.kind === e.kind && v.id < 0);
+        let e: (typeof battle.enemies)[number] | undefined;
+        for (const x of battle.enemies) if (x.id === ev.id) { e = x; break; }
+        let view: EnemyView | undefined;
+        if (e) for (const v of world.enemies) if (v.kind === e.kind && v.id < 0) { view = v; break; }
         if (e && view) {
           view.bind(e);
           byId.set(e.id, view);
@@ -189,21 +197,22 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
     // 3. Views.
     const h = battle.hero;
     world.hero.update(h, camera, dt);
-    const alive = new Set(battle.enemies.map((e) => e.id));
+    alive.clear();
+    for (const e of battle.enemies) alive.add(e.id);
     for (const v of world.enemies) if (v.id >= 0 && !alive.has(v.id)) v.hide();
     for (const e of battle.enemies) byId.get(e.id)?.update(e, h.x, h.z, camera, dt);
-    world.arrows.forEach((view, i) => {
+    for (let i = 0; i < world.arrows.length; i++) {
+      const view = world.arrows[i]!;
       const a = battle.arrows[i];
       if (!a) view.root.visible = false;
       else view.place(a.x, a.z, a.dx, a.dz, a.traveled, dt);
-    });
-    const used: Record<ShotKind, number> = { arrow: 0, axe: 0, blade: 0, rock: 0 };
+    }
+    used.arrow = used.axe = used.blade = used.rock = 0;
     for (const s of battle.shots) world.shots[s.kind][used[s.kind]++]?.place(s.x, s.z, s.dx, s.dz, s.traveled, dt);
-    (Object.keys(world.shots) as ShotKind[]).forEach((k) =>
-      world.shots[k].forEach((v, i) => {
-        if (i >= used[k]) v.root.visible = false;
-      }),
-    );
+    for (const k in world.shots) {
+      const list = world.shots[k as ShotKind];
+      for (let i = used[k as ShotKind]; i < list.length; i++) list[i]!.root.visible = false;
+    }
     world.effects.update(camera, dt);
 
     // 4. Camera: high MOBA angle following the hero, kept inside the map so the outside never shows.
@@ -236,7 +245,7 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
         over: battle.over,
         won: battle.won,
       };
-      const key = JSON.stringify(hud);
+      const key = `${hud.kills}|${hud.coins}|${hud.total}|${hud.wave}|${hud.shield}|${hud.over}|${hud.won}`;
       if (key !== lastHud.current) {
         lastHud.current = key;
         onHud(hud);
@@ -251,7 +260,7 @@ function GameLoop({ battle, controls, onHud, onReady }: { battle: Battle; contro
       castShadow
       intensity={2.3}
       color="#fff1d6"
-      shadow-mapSize={[1024, 1024]}
+      shadow-mapSize={[QUALITY.shadowMap, QUALITY.shadowMap]}
       shadow-camera-left={-32}
       shadow-camera-right={32}
       shadow-camera-top={32}
@@ -375,7 +384,12 @@ function Match({ session }: { session: MatchSession }) {
 
   return (
     <div ref={wrapperRef} className="battle-world" aria-label="Battle Arena map">
-      <Canvas shadows dpr={[1, 2]} camera={{ fov: 42, near: 0.5, far: 220, position: [0, 30, 30] }} gl={{ antialias: true }}>
+      <Canvas
+        shadows
+        dpr={QUALITY.dpr}
+        camera={{ fov: 42, near: 0.5, far: 220, position: [0, 30, 30] }}
+        gl={{ antialias: QUALITY.antialias, powerPreference: "high-performance", stencil: false }}
+      >
         <hemisphereLight args={["#d8efff", "#4d6b2a", 1.1]} />
         <ambientLight intensity={0.25} />
         <PointerAim controls={controls} />

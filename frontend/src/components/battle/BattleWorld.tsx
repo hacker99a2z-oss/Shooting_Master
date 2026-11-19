@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MAP_HALF, type Prop } from "@/lib/battle-rules";
 import { PROP_FILES, PROP_URLS, configureLoader, type PropFile } from "./models";
+import { QUALITY } from "./quality";
 
 /** Kenney kit models are tiny; this brings them to metres. */
 const K = 3.2;
@@ -50,7 +51,7 @@ function seeded(seed: number) {
 }
 
 function grassTexture() {
-  const size = 512;
+  const size = QUALITY.low ? 256 : 512;
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const g = c.getContext("2d")!;
@@ -73,7 +74,7 @@ function grassTexture() {
     }
   }
   g.globalAlpha = 0.55;
-  for (let i = 0; i < 4200; i++) {
+  for (let i = 0; i < (QUALITY.low ? 1100 : 4200); i++) {
     g.strokeStyle = r() < 0.5 ? "#9fd463" : "#4b8a2c";
     g.lineWidth = 1;
     const x = r() * size;
@@ -87,13 +88,13 @@ function grassTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
+  t.anisotropy = QUALITY.low ? 1 : 4;
   return t;
 }
 
 /** Dirt roads and worn patches across the battlefield, drawn once per match. */
 function pathTexture(seed: number) {
-  const size = 1024;
+  const size = QUALITY.low ? 512 : 1024;
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const g = c.getContext("2d")!;
@@ -146,7 +147,7 @@ function pathTexture(seed: number) {
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = QUALITY.low ? 1 : 4;
   return t;
 }
 
@@ -329,19 +330,25 @@ function placeBorder(seed: number, out: Placement[]) {
   }
 }
 
-function Instanced({ parts, matrices }: { parts: Part[]; matrices: THREE.Matrix4[] }) {
+/** Tiny ground clutter: its shadow is invisible from the game camera, so it never casts one. */
+const NO_SHADOW = new Set<Placement["file"]>(["grass", "hedge", "tree-trunk", "resource-wood", "planks"]);
+/** The forest outside the wall; on low-end phones it skips the shadow pass (thousands of triangles). */
+const FOREST = new Set<Placement["file"]>(["tree", "tree-tall", "tree-autumn", "tree-high-round", "tree-crooked"]);
+
+function Instanced({ parts, matrices, cast }: { parts: Part[]; matrices: THREE.Matrix4[]; cast: boolean }) {
   const meshes = useMemo(
     () =>
       parts.map((p) => {
         const m = new THREE.InstancedMesh(p.geometry, p.material, matrices.length);
         matrices.forEach((mat, i) => m.setMatrixAt(i, mat));
         m.instanceMatrix.needsUpdate = true;
-        m.castShadow = true;
+        m.castShadow = cast;
         m.receiveShadow = true;
+        m.matrixAutoUpdate = false;
         m.computeBoundingSphere();
         return m;
       }),
-    [parts, matrices],
+    [parts, matrices, cast],
   );
   return (
     <>
@@ -376,7 +383,7 @@ export function BattleWorld({ props, seed }: { props: Prop[]; seed: number }) {
   return (
     <>
       {groups.map((g) => (
-        <Instanced key={g.file} parts={g.parts} matrices={g.matrices} />
+        <Instanced key={g.file} parts={g.parts} matrices={g.matrices} cast={!NO_SHADOW.has(g.file) && !(QUALITY.low && FOREST.has(g.file))} />
       ))}
     </>
   );
