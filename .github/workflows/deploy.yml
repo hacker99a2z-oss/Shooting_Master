@@ -113,6 +113,7 @@ jobs:
           BODY="$(curl --fail --silent --show-error --retry 8 --retry-delay 10 --retry-all-errors --max-time 30 "$RENDER_API_URL/health")"
           printf '%s' "$BODY" | grep -Fq '"ok":true'
           curl --fail --silent --show-error --retry 5 --retry-delay 3 -D - -o /dev/null -H "Origin: https://shooting-master.pages.dev" "$RENDER_API_URL/health" | grep -Fqi 'access-control-allow-origin: https://shooting-master.pages.dev'
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --head "$RENDER_API_URL/health" -o /dev/null
       - name: Smoke-test Pages homepage
         run: curl --fail --silent --show-error --retry 8 --retry-delay 3 https://shooting-master.pages.dev/ -o /dev/null
       - name: Sync optional payout credentials to Render
