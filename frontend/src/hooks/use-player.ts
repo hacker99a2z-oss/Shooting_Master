@@ -12,6 +12,8 @@ export function usePlayer() {
     staleTime: 10_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    retry: 4,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 4_000),
   });
   useEffect(() => {
     if (q.data) writeCachedPlayer(q.data);
