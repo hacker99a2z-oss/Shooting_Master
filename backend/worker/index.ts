@@ -655,6 +655,26 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
 
   const db=dbFor(env);
   try{
+    if(parsed.action==="retry"){
+      await notify("Checking treasury USDT and BNB gas before retrying…",false);
+      const messageId=Number(message.message_id);
+      try{
+        const outcome=await retryManualReviewWithdrawal(db,env,parsed.withdrawalId,adminId);
+        await editTelegramApprovalMessage(env,chat.id,messageId,
+          "✅ <b>RETRY APPROVED & QUEUED</b>\n$"+outcome.usd.toFixed(2)+" USDT is being processed. Treasury check: "+escapeHtml(outcome.usdtBalance)+" USDT and "+escapeHtml(outcome.bnbBalance)+" BNB available. The user will see <b>Sent</b> only after BNB Chain confirms the transfer."
+        );
+        return json({ok:true,disposition:"retry_queued"});
+      }catch(error){
+        const reason=error instanceof Error?error.message:"Treasury preflight failed.";
+        console.error("[withdrawal approval] manual-review retry blocked",{withdrawalId:parsed.withdrawalId,reason});
+        await editTelegramApprovalMessageWithKeyboard(
+          env,chat.id,messageId,
+          "⚠️ <b>RETRY BLOCKED — NO TRANSFER SENT</b>\n"+escapeHtml(reason)+"\n\nFix the treasury or queue issue, then retry. Refund is available only when no signed transaction exists.",
+          manualReviewKeyboard(parsed.withdrawalId)
+        );
+        return json({ok:true,disposition:"retry_blocked"});
+      }
+    }
     if(parsed.action==="approve"){
       const candidate=await db.execute({
         sql:"SELECT usd,wallet,status FROM withdrawals WHERE id=? LIMIT 1",
@@ -678,19 +698,26 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
       }
     }
     const outcome=await txRun(db,async(tx)=>{
-      const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,balance_cents FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
+      const selected=await tx.execute({sql:"SELECT id,tg_id,coins,usd,wallet,status,created_at,balance_cents,payout_tx_hash,payout_raw_tx FROM withdrawals WHERE id=? LIMIT 1",args:[parsed.withdrawalId]});
       const row=selected.rows[0] as Row|undefined;
       if(!row)return {kind:"missing" as const};
-      if(String(row.status)!=="pending_approval")return {kind:"handled" as const,status:String(row.status)};
+      const currentStatus=String(row.status);
+      const isPendingApproval=currentStatus==="pending_approval";
+      const isManualReview=currentStatus==="pending_review"||currentStatus==="payout_failed_review";
       if(parsed.action==="reject"){
+        if(!isPendingApproval&&!isManualReview)return {kind:"handled" as const,status:currentStatus};
+        if(isManualReview&&(row.payout_tx_hash||row.payout_raw_tx)){
+          return {kind:"reject_blocked" as const,reason:"A signed transaction exists. Verify its BNB Chain status before refunding."};
+        }
         const at=new Date().toISOString();
-        const changed=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Rejected by owner; reserved coins refunded',payout_updated_at=? WHERE id=? AND status='pending_approval'",args:[at,parsed.withdrawalId]});
+        const changed=await tx.execute({sql:"UPDATE withdrawals SET status='rejected',payout_error='Rejected by owner; reserved coins refunded',payout_updated_at=? WHERE id=? AND status=?",args:[at,parsed.withdrawalId,currentStatus]});
         if(changed.rowsAffected!==1)return {kind:"handled" as const,status:"changed"};
         const refund=await tx.execute({sql:"UPDATE players SET coins=coins+?,withdraw_balance_cents=withdraw_balance_cents+? WHERE tg_id=?",args:[Number(row.coins),Number(row.balance_cents??0),Number(row.tg_id)]});
         if(refund.rowsAffected!==1)throw new Error("Could not refund reserved coins");
-        await writePayoutEvent(tx,parsed.withdrawalId,"rejected",{adminTelegramId:adminId,refundCoins:Number(row.coins),refundBalanceCents:Number(row.balance_cents??0),at});
+        await writePayoutEvent(tx,parsed.withdrawalId,"rejected",{adminTelegramId:adminId,refundCoins:Number(row.coins),refundBalanceCents:Number(row.balance_cents??0),at,sourceStatus:currentStatus});
         return {kind:"rejected" as const,coins:Number(row.coins),usd:Number(row.usd)};
       }
+      if(!isPendingApproval)return {kind:"handled" as const,status:currentStatus};
       if(!payoutConfigured(env))return {kind:"blocked" as const,reason:"Automatic payouts are disabled or not fully configured."};
       const daily=await tx.execute({
         sql:"SELECT COALESCE(SUM(usd),0) AS total FROM withdrawals WHERE substr(created_at,1,10)=? AND status IN ('pending_auto','processing','paid','payout_failed_review')",
@@ -719,6 +746,11 @@ async function handleWithdrawalApprovalCallback(callback:Row,env:Env){
     if(outcome.kind==="blocked"){
       await notify(outcome.reason,true);
       return json({ok:true});
+    }
+    if(outcome.kind==="reject_blocked"){
+      await notify(outcome.reason,true);
+      await editTelegramApprovalMessage(env,chat.id,messageId,"⚠️ <b>REFUND BLOCKED</b>\n"+escapeHtml(outcome.reason));
+      return json({ok:true,disposition:"reject_blocked"});
     }
     if(outcome.kind==="rejected"){
       await notify("Rejected. "+outcome.coins.toLocaleString("en-US")+" coins were refunded.",true);
@@ -765,7 +797,22 @@ async function telegramWebhook(request:Request,env:Env){
   const message=update.message as Row|undefined;
   const chat=message?.chat as Row|undefined;
   const command=typeof message?.text==="string"?message.text.trim():"";
-  if(chat?.type!=="private"||!/^\/start(?:@\w+)?(?:\s|$)/i.test(command))return json({ok:true});
+  if(chat?.type!=="private")return json({ok:true});
+  if(/^\/(?:review|manualreview)(?:@\w+)?(?:\s|$)/i.test(command)){
+    const adminId=Number(message?.from?.id);
+    const admins=parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS);
+    if(!Number.isSafeInteger(adminId)||!admins.includes(adminId)){
+      await telegramCall(env,"sendMessage",{chat_id:chat.id,text:"You are not authorized to view manual-review withdrawals."});
+      return json({ok:true});
+    }
+    try{await sendManualReviewList(env,adminId);}
+    catch(error){
+      console.error("[withdrawal approval] manual-review list failed",error);
+      await telegramCall(env,"sendMessage",{chat_id:chat.id,text:"Could not load Manual Review right now. Please try again."}).catch(()=>{});
+    }
+    return json({ok:true});
+  }
+  if(!/^\/start(?:@\w+)?(?:\s|$)/i.test(command))return json({ok:true});
   const text=[
     "🪙 <b>EARN COINS:</b> Defeat enemies to earn 10 coins per kill and collect bonus rewards.",
     "💵 <b>WITHDRAW BALANCE:</b> Daily cash claims add withdrawable dollars separately. Battle Arena kills earn Coins; withdrawals require both.",
