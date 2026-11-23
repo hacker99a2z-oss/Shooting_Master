@@ -364,6 +364,10 @@ function Withdraw() {
     try {
       let provider: TrustWalletProvider | null = getInjectedTrustWallet();
       if (!provider && currentDeviceIsPhone()) {
+        // A persisted WalletConnect session may finish restoring just as the user taps.
+        provider = await restoreTrustWalletSession() as TrustWalletProvider | null;
+      }
+      if (!provider && currentDeviceIsPhone()) {
         const link = pendingWalletConnectUrl;
         if (!link) {
           toast.info("Trust Wallet is preparing the secure connection. Tap Connect again in a moment.");
