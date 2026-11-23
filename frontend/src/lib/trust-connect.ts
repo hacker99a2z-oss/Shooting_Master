@@ -20,6 +20,27 @@ type Provider = {
 type PreparedConnection = { provider: Provider; link: string | null; connectPromise: Promise<void> | null };
 let preparedConnection: PreparedConnection | null = null;
 
+// Keep one WalletConnect provider for the lifetime of the Mini App. Route components
+// can unmount during navigation, but that must never tear down a live wallet session.
+let sharedProvider: Provider | null = null;
+let sharedProviderPromise: Promise<Provider> | null = null;
+let restoreSessionPromise: Promise<Provider | null> | null = null;
+
+async function getSharedWalletConnectProvider(): Promise<Provider> {
+  if (sharedProvider) return sharedProvider;
+  if (!sharedProviderPromise) {
+    sharedProviderPromise = initWalletConnect(false)
+      .then((provider) => {
+        sharedProvider = provider as Provider;
+        return sharedProvider;
+      })
+      .finally(() => {
+        sharedProviderPromise = null;
+      });
+  }
+  return await sharedProviderPromise;
+}
+
 /** Phone = Telegram on Android/iOS, or a mobile browser. Everything else is treated as a PC. */
 export function isPhoneDevice(platform?: string, userAgent?: string): boolean {
   const p = (platform ?? "").toLowerCase();
@@ -85,7 +106,7 @@ export async function prepareTrustWalletSession(
     if (preparedConnection.link) onConnectLink(preparedConnection.link);
     return;
   }
-  const provider = await initWalletConnect(false) as Provider;
+  const provider = await getSharedWalletConnectProvider();
   if (provider.session) {
     preparedConnection = { provider, link: null, connectPromise: null };
     return;
@@ -130,28 +151,43 @@ export async function connectPreparedTrustWalletSession(): Promise<Provider> {
 }
 
 export async function restoreTrustWalletSession(): Promise<Provider | null> {
+  if (sharedProvider?.session) return sharedProvider;
+  if (restoreSessionPromise) return await restoreSessionPromise;
+
+  // EthereumProvider hydrates its persisted WalletConnect session during init.
+  // Do not use a localStorage key as proof of connection: stale WC keys can remain
+  // after a session has expired or been deleted in Trust Wallet.
+  restoreSessionPromise = (async () => {
+    try {
+      const provider = await getSharedWalletConnectProvider();
+      return provider.session ? provider : null;
+    } catch {
+      return null;
+    }
+  })();
+
   try {
-    if (preparedConnection?.provider.session) return preparedConnection.provider;
-    const hasSession = Object.keys(window.localStorage).some((key) => key.startsWith("wc@2"));
-    if (!hasSession) return null;
-    const provider = await initWalletConnect(false);
-    return provider.session ? (provider as Provider) : null;
-  } catch {
-    return null;
+    return await restoreSessionPromise;
+  } finally {
+    restoreSessionPromise = null;
   }
 }
 
 export async function disconnectTrustWalletProvider(provider: Provider): Promise<void> {
-  if (preparedConnection?.provider === provider) preparedConnection = null;
   if (provider.disconnect) {
     await provider.disconnect();
-    return;
+  } else {
+    try {
+      await provider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+      // Some injected wallets do not implement account permission revocation.
+    }
   }
-  try {
-    await provider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
-  } catch {
-    // Some injected wallets do not implement account permission revocation.
-  }
+
+  if (preparedConnection?.provider === provider) preparedConnection = null;
+  if (sharedProvider === provider) sharedProvider = null;
+  sharedProviderPromise = null;
+  restoreSessionPromise = null;
 }
 
 export type InjectedTrustProvider = Provider & {

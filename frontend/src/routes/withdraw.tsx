@@ -8,9 +8,9 @@ import { usePlayer } from "@/hooks/use-player";
 import { createWalletConnectTicket, disconnectWalletDestination, getWalletConnectTicketStatus, getWalletDestination, getWithdrawals, requestWithdraw, saveWalletDestination, type WalletConnectTicket, type Withdrawal } from "@/lib/api.functions";
 import { auth, openLink, PROOF_URL, SUPPORT_URL, haptic } from "@/lib/tg";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
-import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, validBep20Address } from "@/lib/wallet-rules";
+import { BSC_CHAIN_ID, BSC_CHAIN_ID_HEX, shortenWalletAddress, toChecksumAddress, validBep20Address } from "@/lib/wallet-rules";
 import { checkWithdrawalEligibility, isWalletConnectionReady, coinsForWithdrawUsd, withdrawalCentsForUsd, HISTORY_LIMIT, isPendingWithdrawal, withdrawalStatusLabel } from "@/lib/withdraw-rules";
-import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, currentDeviceNeedsExternalWalletBridge, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
+import { TRUST_EXTENSION_URL, connectPreparedTrustWalletSession, currentDeviceIsPhone, currentDeviceNeedsExternalWalletBridge, disconnectTrustWalletProvider, isTrustWalletInjectedProvider, pendingTrustWalletConnectLink, prepareTrustWalletSession, restoreTrustWalletSession, selectTrustWalletInjectedProvider } from "@/lib/trust-connect";
 
 const BSC_NETWORK = {
   chainId: BSC_CHAIN_ID_HEX,
@@ -201,6 +201,9 @@ function Withdraw() {
         }
         return;
       }
+      const pendingLink = pendingTrustWalletConnectLink();
+      if (pendingLink && !cancelled) setPendingWalletConnectUrl(pendingLink);
+
       const injected = getInjectedTrustWallet();
       const injectedAccounts = injected
         ? await injected.request({ method: "eth_accounts" }).then(firstAccount).catch(() => "")
@@ -210,22 +213,18 @@ function Withdraw() {
         const address = firstAccount(await provider.request({ method: "eth_accounts" }).catch(() => []));
         const chainId = await provider.request({ method: "eth_chainId" }).catch(() => 0);
         if (!cancelled && validBep20Address(address)) {
-          const saved = await saveWalletDestination({ ...auth(), address, asset: "USDT", network: "BEP20" }).catch(() => null);
-          if (cancelled) return;
+          // Restore the live provider immediately. Saving the destination is separate and
+          // must not delay the connected state when the Mini App first opens.
           setWalletProvider(provider);
-          setWalletAddress(saved?.destination.address ?? address);
-          setVerifiedWalletAddress(saved?.destination.address ?? address);
+          setWalletAddress(address);
+          setVerifiedWalletAddress(address);
           setIsBscNetwork(Number(chainId) === BSC_CHAIN_ID);
+          void saveWalletDestination({ ...auth(), address, asset: "USDT", network: "BEP20" }).catch(() => {});
           return;
         }
       }
-      if (!cancelled && currentDeviceIsPhone()) {
-        setWalletConnectPreparing(true);
-        void prepareTrustWalletSession(
-          (link) => { if (!cancelled) { setPendingWalletConnectUrl(link); setWalletConnectPreparing(false); } },
-          () => { if (!cancelled) setWalletConnectPreparing(false); },
-        ).catch(() => { if (!cancelled) setWalletConnectPreparing(false); });
-      }
+      // Do not start a new WalletConnect pairing just because the page mounted.
+      // A fresh pairing is prepared only after the user taps Connect.
     })();
 
     return () => {
@@ -353,13 +352,6 @@ function Withdraw() {
         setIsBscNetwork(false);
         setPendingWalletConnectUrl(null);
         toast.success("Trust Wallet disconnected.");
-        if (currentDeviceIsPhone()) {
-          setWalletConnectPreparing(true);
-          void prepareTrustWalletSession(
-            (link) => { setPendingWalletConnectUrl(link); setWalletConnectPreparing(false); },
-            () => setWalletConnectPreparing(false),
-          ).catch(() => setWalletConnectPreparing(false));
-        }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not disconnect Trust Wallet.");
       } finally {
@@ -524,7 +516,7 @@ function Withdraw() {
         <label className="block">
           <span className="wallet-amount-label-row">
             <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
-            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : "No wallet connected"}</span>
+            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(toChecksumAddress(walletAddress)) : "No wallet connected"}</span>
           </span>
           <div className="wallet-amount-field">
             <span className="wallet-amount-prefix">$</span>

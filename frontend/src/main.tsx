@@ -5,6 +5,7 @@ import { getRouter, queryClient } from "./router";
 import { getMe } from "@/lib/api.functions";
 import { auth, startParam, webApp } from "@/lib/tg";
 import { readCachedPlayer, writeCachedPlayer } from "@/lib/player-cache";
+import { currentDeviceIsPhone, restoreTrustWalletSession } from "@/lib/trust-connect";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -13,6 +14,10 @@ if (!root) throw new Error("Missing root element");
 const telegram = webApp();
 telegram?.ready();
 telegram?.expand();
+
+// Warm the persisted mobile Trust Wallet session as soon as the Mini App opens.
+// This does not create a new pairing or show a preparation spinner.
+if (currentDeviceIsPhone()) void restoreTrustWalletSession();
 
 const cached = readCachedPlayer();
 if (cached) queryClient.setQueryData(["me"], cached.player, { updatedAt: cached.updatedAt });

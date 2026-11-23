@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MIN_WITHDRAW_USD } from "@/lib/rules";
 import { HISTORY_LIMIT, coinsForWithdrawUsd, withdrawalCentsForUsd, checkWithdrawalEligibility, isPendingWithdrawal, isWalletConnectionReady, withdrawalStatusLabel } from "@/lib/withdraw-rules";
 import { isPhoneDevice } from "@/lib/trust-connect";
-import { shortenWalletAddress } from "@/lib/wallet-rules";
+import { shortenWalletAddress, toChecksumAddress } from "@/lib/wallet-rules";
 
 describe("withdraw rules", () => {
   it("accepts a verified desktop extension bridge without an injected provider in Telegram", () => {
@@ -146,6 +146,19 @@ describe("coins shown under the amount", () => {
   it("$1 needs 100,000 coins", () => expect(coinsForWithdrawUsd(1)).toBe(100000));
   it("$0.05 needs 5,000 coins", () => expect(coinsForWithdrawUsd(0.05)).toBe(5000));
   it("an empty amount needs 0 coins", () => expect(coinsForWithdrawUsd(Number(""))).toBe(0));
+});
+
+describe("Trust Wallet checksum address formatting", () => {
+  it("converts lowercase WalletConnect addresses to the EIP-55 mixed-case display", () => {
+    expect(toChecksumAddress("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"))
+      .toBe("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+    expect(toChecksumAddress("0x52908400098527886e0f7030069857d2e4169ee7"))
+      .toBe("0x52908400098527886E0F7030069857D2E4169EE7");
+  });
+
+  it("does not alter invalid or non-address values", () => {
+    expect(toChecksumAddress("Not an address")).toBe("Not an address");
+  });
 });
 
 describe("wallet address shown beside the amount", () => {
