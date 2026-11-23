@@ -17,7 +17,13 @@ type Provider = {
   session?: unknown;
 };
 
-type PreparedConnection = { provider: Provider; link: string | null; connectPromise: Promise<void> | null };
+type PreparedConnection = {
+  provider: Provider;
+  link: string | null;
+  connectPromise: Promise<void> | null;
+  onConnectLink: Array<(link: string) => void>;
+  onError: Array<(error: unknown) => void>;
+};
 let preparedConnection: PreparedConnection | null = null;
 
 // Keep one WalletConnect provider for the lifetime of the Mini App. Route components
@@ -104,19 +110,27 @@ export async function prepareTrustWalletSession(
 ): Promise<void> {
   if (preparedConnection) {
     if (preparedConnection.link) onConnectLink(preparedConnection.link);
+    else preparedConnection.onConnectLink.push(onConnectLink);
+    if (onError) preparedConnection.onError.push(onError);
     return;
   }
   const provider = await getSharedWalletConnectProvider();
   if (provider.session) {
-    preparedConnection = { provider, link: null, connectPromise: null };
+    preparedConnection = { provider, link: null, connectPromise: null, onConnectLink: [], onError: [] };
     return;
   }
-  const prepared: PreparedConnection = { provider, link: null, connectPromise: null };
+  const prepared: PreparedConnection = {
+    provider,
+    link: null,
+    connectPromise: null,
+    onConnectLink: [onConnectLink],
+    onError: onError ? [onError] : [],
+  };
   preparedConnection = prepared;
   provider.on?.("display_uri", (uri: string) => {
     if (preparedConnection !== prepared) return;
     prepared.link = trustAppConnectLink(uri);
-    onConnectLink(prepared.link);
+    for (const listener of prepared.onConnectLink) listener(prepared.link);
   });
   if (!provider.connect) {
     preparedConnection = null;
@@ -126,7 +140,7 @@ export async function prepareTrustWalletSession(
   prepared.connectPromise = promise;
   void promise.catch((error) => {
     if (preparedConnection === prepared) preparedConnection = null;
-    onError?.(error);
+    for (const listener of prepared.onError) listener(error);
   });
 }
 
