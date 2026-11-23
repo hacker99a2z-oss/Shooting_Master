@@ -138,7 +138,6 @@ function Withdraw() {
   });
   const [usd, setUsd] = useState(String(MIN_WITHDRAW_USD));
   const [walletAddress, setWalletAddress] = useState("");
-  const [lastWalletAddress, setLastWalletAddress] = useState("");
   const [walletConnectPreparing, setWalletConnectPreparing] = useState(false);
   const [walletProvider, setWalletProvider] = useState<TrustWalletProvider | null>(null);
   const [isBscNetwork, setIsBscNetwork] = useState(false);
@@ -166,7 +165,6 @@ function Withdraw() {
     walletProviderAvailable: Boolean(walletProvider),
     externalWalletVerified,
     walletAddress,
-    lastWalletAddress,
   });
   const eligibility = checkWithdrawalEligibility({
     usd: amount,
@@ -176,24 +174,22 @@ function Withdraw() {
     walletConnected: walletConnectionReady,
   });
 
-  // Restore the server-saved address and approved wallet session. Prepare a fresh mobile
-  // WalletConnect URI ahead of the user's tap so the Connect tap opens Trust Wallet directly.
+  // Phones restore their actual injected or WalletConnect session. Only the desktop bridge
+  // reads its verified server destination because Telegram Desktop cannot access Brave extensions.
   useEffect(() => {
     let cancelled = false;
     window.addEventListener("eip6963:announceProvider", collectTrustProvider);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
 
-    void getWalletDestination(auth()).then(({ destination }) => {
-      if (!cancelled && destination?.address && Number(destination.chainId) === BSC_CHAIN_ID) {
-        setLastWalletAddress(destination.address);
-        setWalletAddress(destination.address);
-        setIsBscNetwork(true);
-        setExternalWalletVerified(true);
-      }
-    }).catch(() => {});
-
     (async () => {
       if (currentDeviceNeedsExternalWalletBridge()) {
+        void getWalletDestination(auth()).then(({ destination }) => {
+          if (!cancelled && destination?.address && Number(destination.chainId) === BSC_CHAIN_ID) {
+            setWalletAddress(destination.address);
+            setIsBscNetwork(true);
+            setExternalWalletVerified(true);
+          }
+        }).catch(() => {});
         try {
           const ticket = await createWalletConnectTicket(auth());
           if (!cancelled) setWalletBridgeTicket(ticket);
@@ -210,9 +206,10 @@ function Withdraw() {
         const address = firstAccount(await provider.request({ method: "eth_accounts" }).catch(() => []));
         const chainId = await provider.request({ method: "eth_chainId" }).catch(() => 0);
         if (!cancelled && validBep20Address(address)) {
+          const saved = await saveWalletDestination({ ...auth(), address, asset: "USDT", network: "BEP20" }).catch(() => null);
+          if (cancelled) return;
           setWalletProvider(provider);
-          setWalletAddress(address);
-          setLastWalletAddress(address);
+          setWalletAddress(saved?.destination.address ?? address);
           setIsBscNetwork(Number(chainId) === BSC_CHAIN_ID);
           return;
         }
@@ -245,7 +242,6 @@ function Withdraw() {
         if(!active)return;
         if(status.completed&&status.destination&&validBep20Address(status.destination.address)&&status.destination.chainId===BSC_CHAIN_ID){
           setWalletAddress(status.destination.address);
-          setLastWalletAddress(status.destination.address);
           setIsBscNetwork(true);
           setWalletProvider(null);
           setExternalWalletVerified(true);
@@ -280,8 +276,11 @@ function Withdraw() {
       const valid = validBep20Address(address) ? address : "";
       setWalletAddress(valid);
       if (valid) {
-        setLastWalletAddress(valid);
-        saveWalletDestination({ ...auth(), address: valid, asset: "USDT", network: "BEP20" }).catch(() => {});
+        void saveWalletDestination({ ...auth(), address: valid, asset: "USDT", network: "BEP20" })
+          .then(({ destination }) => setWalletAddress(destination.address))
+          .catch(() => {});
+      } else {
+        void disconnectWalletDestination(auth()).catch(() => {});
       }
     };
     const handleChainChanged = (...args: unknown[]) => setIsBscNetwork(Number(args[0]) === BSC_CHAIN_ID);
@@ -307,7 +306,6 @@ function Withdraw() {
       try {
         await disconnectWalletDestination(auth());
         setWalletAddress("");
-        setLastWalletAddress("");
         setIsBscNetwork(false);
         setExternalWalletVerified(false);
         setWalletBridgeTicket(null);
@@ -337,11 +335,10 @@ function Withdraw() {
         await disconnectWalletDestination(auth());
         setWalletProvider(null);
         setWalletAddress("");
-        setLastWalletAddress("");
         setExternalWalletVerified(false);
         setIsBscNetwork(false);
         setPendingWalletConnectUrl(null);
-        toast.success("Trust Wallet disconnected. Your last-used address is saved.");
+        toast.success("Trust Wallet disconnected.");
         if (currentDeviceIsPhone()) {
           setWalletConnectPreparing(true);
           void prepareTrustWalletSession(
@@ -398,9 +395,9 @@ function Withdraw() {
       const active = firstAccount(await provider.request({ method: "eth_accounts" })) || address;
       if (!validBep20Address(active)) throw new Error("No valid wallet account is connected.");
 
-      await saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" });
+      const saved = await saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" });
       setWalletProvider(provider);
-      setWalletAddress(active);
+      setWalletAddress(saved.destination.address);
       setLastWalletAddress(active);
       setPendingWalletConnectUrl(null);
       setIsBscNetwork(true);
@@ -513,7 +510,7 @@ function Withdraw() {
         <label className="block">
           <span className="wallet-amount-label-row">
             <span className="hud-label">Amount (min ${MIN_WITHDRAW_USD})</span>
-            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : lastWalletAddress ? "Last: " + shortenWalletAddress(lastWalletAddress) : "No wallet connected"}</span>
+            <span className="wallet-network-badge">{walletAddress ? shortenWalletAddress(walletAddress) : "No wallet connected"}</span>
           </span>
           <div className="wallet-amount-field">
             <span className="wallet-amount-prefix">$</span>
