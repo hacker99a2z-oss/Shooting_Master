@@ -11,7 +11,7 @@ describe("withdraw rules", () => {
       walletProviderAvailable: false,
       externalWalletVerified: true,
       walletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
-      lastWalletAddress: "0xcaa719ad000000000000000000000000c772c50ef1",
+      verifiedWalletAddress: "0xcaa719ad000000000000000000000000c772c50ef1",
     })).toBe(true);
   });
 
@@ -21,17 +21,17 @@ describe("withdraw rules", () => {
       walletProviderAvailable: false,
       externalWalletVerified: false,
       walletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
-      lastWalletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
+      verifiedWalletAddress: "0xCAa719Ad000000000000000000000000C772C50Ef1",
     })).toBe(false);
   });
 
-  it("rejects a wallet address that differs from the saved address", () => {
+  it("rejects a wallet address that differs from the currently verified connection", () => {
     expect(isWalletConnectionReady({
       connected: true,
       walletProviderAvailable: true,
       externalWalletVerified: false,
       walletAddress: "0x1111111111111111111111111111111111111111",
-      lastWalletAddress: "0x2222222222222222222222222222222222222222",
+      verifiedWalletAddress: "0x2222222222222222222222222222222222222222",
     })).toBe(false);
   });
 

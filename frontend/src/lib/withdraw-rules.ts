@@ -49,10 +49,12 @@ export function isWalletConnectionReady(input: {
   walletProviderAvailable: boolean;
   externalWalletVerified: boolean;
   walletAddress: string;
+  verifiedWalletAddress: string;
 }): boolean {
   return input.connected &&
     (input.walletProviderAvailable || input.externalWalletVerified) &&
-    Boolean(input.walletAddress);
+    Boolean(input.walletAddress) &&
+    input.walletAddress.toLowerCase() === input.verifiedWalletAddress.toLowerCase();
 }
 
 export type WithdrawalEligibility = {

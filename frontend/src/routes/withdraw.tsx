@@ -138,6 +138,7 @@ function Withdraw() {
   });
   const [usd, setUsd] = useState(String(MIN_WITHDRAW_USD));
   const [walletAddress, setWalletAddress] = useState("");
+  const [verifiedWalletAddress, setVerifiedWalletAddress] = useState("");
   const [walletConnectPreparing, setWalletConnectPreparing] = useState(false);
   const [walletProvider, setWalletProvider] = useState<TrustWalletProvider | null>(null);
   const [isBscNetwork, setIsBscNetwork] = useState(false);
@@ -165,6 +166,7 @@ function Withdraw() {
     walletProviderAvailable: Boolean(walletProvider),
     externalWalletVerified,
     walletAddress,
+    verifiedWalletAddress,
   });
   const eligibility = checkWithdrawalEligibility({
     usd: amount,
@@ -186,6 +188,7 @@ function Withdraw() {
         void getWalletDestination(auth()).then(({ destination }) => {
           if (!cancelled && destination?.address && Number(destination.chainId) === BSC_CHAIN_ID) {
             setWalletAddress(destination.address);
+            setVerifiedWalletAddress(destination.address);
             setIsBscNetwork(true);
             setExternalWalletVerified(true);
           }
@@ -211,6 +214,7 @@ function Withdraw() {
           if (cancelled) return;
           setWalletProvider(provider);
           setWalletAddress(saved?.destination.address ?? address);
+          setVerifiedWalletAddress(saved?.destination.address ?? address);
           setIsBscNetwork(Number(chainId) === BSC_CHAIN_ID);
           return;
         }
@@ -243,6 +247,7 @@ function Withdraw() {
         if(!active)return;
         if(status.completed&&status.destination&&validBep20Address(status.destination.address)&&status.destination.chainId===BSC_CHAIN_ID){
           setWalletAddress(status.destination.address);
+          setVerifiedWalletAddress(status.destination.address);
           setIsBscNetwork(true);
           setWalletProvider(null);
           setExternalWalletVerified(true);
@@ -276,9 +281,13 @@ function Withdraw() {
       const address = firstAccount(args[0]);
       const valid = validBep20Address(address) ? address : "";
       setWalletAddress(valid);
+      setVerifiedWalletAddress(valid);
       if (valid) {
         void saveWalletDestination({ ...auth(), address: valid, asset: "USDT", network: "BEP20" })
-          .then(({ destination }) => setWalletAddress(destination.address))
+          .then(({ destination }) => {
+            setWalletAddress(destination.address);
+            setVerifiedWalletAddress(destination.address);
+          })
           .catch(() => {});
       } else {
         void disconnectWalletDestination(auth()).catch(() => {});
@@ -287,6 +296,7 @@ function Withdraw() {
     const handleChainChanged = (...args: unknown[]) => setIsBscNetwork(Number(args[0]) === BSC_CHAIN_ID);
     const handleDisconnect = () => {
       setWalletAddress("");
+      setVerifiedWalletAddress("");
       setIsBscNetwork(false);
       setWalletProvider(null);
       void disconnectWalletDestination(auth()).catch(() => {});
@@ -308,6 +318,7 @@ function Withdraw() {
       try {
         await disconnectWalletDestination(auth());
         setWalletAddress("");
+        setVerifiedWalletAddress("");
         setIsBscNetwork(false);
         setExternalWalletVerified(false);
         setWalletBridgeTicket(null);
@@ -337,6 +348,7 @@ function Withdraw() {
         await disconnectWalletDestination(auth());
         setWalletProvider(null);
         setWalletAddress("");
+        setVerifiedWalletAddress("");
         setExternalWalletVerified(false);
         setIsBscNetwork(false);
         setPendingWalletConnectUrl(null);
@@ -400,6 +412,7 @@ function Withdraw() {
       const saved = await saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" });
       setWalletProvider(provider);
       setWalletAddress(saved.destination.address);
+      setVerifiedWalletAddress(saved.destination.address);
       setPendingWalletConnectUrl(null);
       setIsBscNetwork(true);
       setShowConnectHint(false);

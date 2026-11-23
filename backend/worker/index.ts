@@ -14,7 +14,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { bsc } from "viem/chains";
 import { assessBep20PayoutBalances } from "../payout-preflight.ts";
-import { checksumBep20Address, destinationInput, isBep20Destination } from "../wallet-destination.ts";
+import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible, nextAdReadyAt } from "../game-access.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 import { verifyBattleReplay } from "../game-replay.ts";
@@ -1000,14 +1000,12 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
       const result=await db.execute({sql:"SELECT t.consumed_at,t.expires_at,d.address,d.asset,d.network,d.chain_id AS chainId,d.updated_at AS updatedAt FROM wallet_connect_tickets t LEFT JOIN wallet_destinations d ON d.tg_id=t.tg_id WHERE t.ticket_hash=? AND t.tg_id=? AND t.created_at>?",args:[ticketHash,user.id,Date.now()-10*60_000]});
       const row=result.rows[0] as Row|undefined;
       if(!row)return json({error:"Wallet connection ticket not found."},404);
-      const destination=row.address?{address:checksumBep20Address(String(row.address)),asset:"USDT",network:"BEP20",chainId:Number(row.chainId),updatedAt:String(row.updatedAt)}:null;
+      const destination=row.address?{address:String(row.address),asset:"USDT",network:"BEP20",chainId:Number(row.chainId),updatedAt:String(row.updatedAt)}:null;
       return json({completed:row.consumed_at!=null,expired:row.consumed_at==null&&Number(row.expires_at)<=Date.now(),destination});
     }
     if(path==="/api/wallet/destination"){
       const result=await db.execute({sql:"SELECT address,asset,network,chain_id AS chainId,updated_at AS updatedAt FROM wallet_destinations WHERE tg_id=? LIMIT 1",args:[user.id]});
-      const row=result.rows[0] as Row|undefined;
-      const destination=row?{...row,address:checksumBep20Address(String(row.address))}:null;
-      return json({destination});
+      return json({destination:result.rows[0]??null});
     }
     if(path==="/api/wallet/disconnect"){
       await db.execute({sql:"DELETE FROM wallet_destinations WHERE tg_id=?",args:[user.id]});
@@ -1291,11 +1289,10 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     if(path==="/api/withdrawals/request"){
       const amounts=withdrawalAmountsFromUsd(body.usd);
-      const submittedWallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
-      const isBep20Address=isBep20Destination(submittedWallet);
+      const wallet=typeof body.wallet==="string"?body.wallet.trim().slice(0,120):"";
+      const isBep20Address=isBep20Destination(wallet);
       if(body.asset!=="USDT"||body.network!=="BEP20"||!amounts||!isBep20Address)
         return json({error:"Withdrawals require a valid BNB Smart Chain (BEP-20) address and an amount with up to two decimal places."},400);
-      const wallet=checksumBep20Address(submittedWallet);
       if(!parseAdminTelegramIds(env.ADMIN_TELEGRAM_IDS).length)
         return json({error:"Withdrawal approval is not configured yet. Please contact support; no coins or balance were deducted."},503);
       const {usd,usdCents,coins}=amounts;
