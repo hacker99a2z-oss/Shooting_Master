@@ -199,9 +199,10 @@ function Withdraw() {
         return;
       }
       const injected = getInjectedTrustWallet();
-      const provider = injected
-        ? ((await injected.request({ method: "eth_accounts" }).then(firstAccount).catch(() => "")) ? injected : null)
-        : await restoreTrustWalletSession();
+      const injectedAccounts = injected
+        ? await injected.request({ method: "eth_accounts" }).then(firstAccount).catch(() => "")
+        : "";
+      const provider = injectedAccounts ? injected : await restoreTrustWalletSession();
       if (provider && !cancelled) {
         const address = firstAccount(await provider.request({ method: "eth_accounts" }).catch(() => []));
         const chainId = await provider.request({ method: "eth_chainId" }).catch(() => 0);
@@ -288,6 +289,7 @@ function Withdraw() {
       setWalletAddress("");
       setIsBscNetwork(false);
       setWalletProvider(null);
+      void disconnectWalletDestination(auth()).catch(() => {});
     };
     walletProvider.on?.("accountsChanged", handleAccountsChanged);
     walletProvider.on?.("chainChanged", handleChainChanged);
@@ -398,7 +400,6 @@ function Withdraw() {
       const saved = await saveWalletDestination({ ...auth(), address: active, asset: "USDT", network: "BEP20" });
       setWalletProvider(provider);
       setWalletAddress(saved.destination.address);
-      setLastWalletAddress(active);
       setPendingWalletConnectUrl(null);
       setIsBscNetwork(true);
       setShowConnectHint(false);
