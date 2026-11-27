@@ -3,9 +3,9 @@ import { Home, Trophy, Users, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 
 const tabs = [
+  { to: "/refer", label: "Refer", icon: Users },
   { to: "/", label: "Home", icon: Home },
   { to: "/leaderboard", label: "Leaderboard", icon: Trophy },
-  { to: "/refer", label: "Refer", icon: Users },
   { to: "/withdraw", label: "Wallet", icon: Wallet },
 ] as const;
 
