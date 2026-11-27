@@ -31,7 +31,7 @@ The workflow uses Pages project shooting-master and API CORS origin https://shoo
 
 ## Separate Coins and Withdraw Balance
 
-Battle Arena kill rewards, referral rewards and coin bonuses are stored in `players.coins`. Daily Games cash claims (`$0.03` at 10 games and `$0.04` at 20 games) are credited to `players.withdraw_balance_cents`, not Coins. The 100-game cash bonus also credits withdraw balance.
+Battle Arena kill rewards, referral rewards and coin bonuses are stored in `players.coins`. Daily Games cash claims (`$0.03` at 10 games and `$0.04` at 20 games) are credited to `players.withdraw_balance_cents`, not Coins. There is no separate 100-game daily cash bonus.
 
 A withdrawal is accepted only when the signed-in Telegram user has a saved BEP-20 destination, enough withdraw balance, and enough Coins. The server calculates the required values from the USD amount: 100,000 Coins per $1 (therefore 2,000 Coins plus $0.02 withdraw balance for a $0.02 withdrawal). Both amounts are debited in one database transaction. An owner rejection or failed owner-notification delivery refunds both amounts exactly once. Clients cannot submit replacement coin or balance totals; the backend derives and validates all credits/debits. Existing Coin balances are not converted into withdraw balance by migration.
 
@@ -90,7 +90,7 @@ Backend: cd backend, npm install, copy .dev.vars.example to .dev.vars, fill loca
 - Withdrawals atomically reserve coins and wait for owner approval in a private Telegram bot chat. Rejection refunds coins exactly once. Only an authorized owner approval can enqueue the payout; the app shows Sent only after a confirmed BNB Chain transfer. Automatic payouts remain off by default and require the secrets and activation steps below.
 - AdsGram rewards are credited only after the protected server-to-server Reward URL callback consumes a pending one-time session. AdsGram's documented callback has no signature or unique event ID, so the shared-secret URL is not a cryptographically signed receipt.
 - The Battle Arena game is client-rendered. Server-issued one-time sessions, target limits and bounded rewards reduce simple replay/overclaiming, but do not prove the client played honestly. Do not pay high-value prizes until authoritative gameplay or stronger anti-cheat is implemented.
-- The leaderboard shows up to 50 players who played at least 1 game this season; the top 30 share a $10 prize pool every 48 hours. Displayed prize values are calculations, not automatic payouts.
+- The leaderboard shows up to 50 players who played at least 1 game this season; the top 30 share a $10 prize pool every 48 hours. When a round expires, the final top-30 prizes are credited once to each winner’s `players.withdraw_balance_cents`. Settlement uses the existing Render maintenance flow and health-monitor requests, with no extra service or scheduler. Since it is request-driven, credit can happen shortly after the displayed countdown reaches zero.
 - 50–60k daily active users is a target, not a verified capacity guarantee. Complete load tests and review Turso plan limits, Worker concurrency, Queue throughput, observability and recovery before public launch.
 - Never commit environment files, bot/API tokens, database credentials or service-role keys. Any secret that entered Git history must be rotated; deleting the latest file does not erase historical commits.
 

@@ -171,6 +171,7 @@ async function handle(request, response) {
         response.end(request.method === "HEAD" ? undefined : JSON.stringify({ error: "Origin not allowed" }));
         return;
       }
+      void runMaintenance();
       const headers = {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",

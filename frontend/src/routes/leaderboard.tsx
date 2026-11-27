@@ -62,7 +62,7 @@ function Leaderboard() {
             ))}
           </div>
           <p className="mt-2 flex items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-secondary py-2 text-xs text-muted-foreground">
-            <Info className="h-3.5 w-3.5 text-primary" /> Play at least <b className="text-foreground">1 game</b> to join this round
+            <Info className="h-3.5 w-3.5 text-primary" /> Play at least <b className="text-foreground">1 game</b> to qualify; prizes go to Withdraw Balance when the round ends
           </p>
         </div>
       </section>

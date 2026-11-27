@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AD_COOLDOWN_MS, MIN_WITHDRAW_USD, DAILY_GAMES_GOAL, coinsToUsd, prizeForRank, randomBonusCoins,
+  AD_COOLDOWN_MS, MIN_WITHDRAW_USD, coinsToUsd, prizeForRank, prizeForRankCents,
   rewardForKills, seasonEndsAt,
 } from "@/lib/rules";
 
@@ -11,19 +11,17 @@ describe("game rewards & difficulty", () => {
   });
   it("can't earn for more than 12 kills", () => expect(rewardForKills(50)).toBe(120));
   it("ad timer is 3 minutes", () => expect(AD_COOLDOWN_MS).toBe(180_000));
-  it("daily bonus needs 100 games and pays $0.01-$0.05", () => {
-    expect(DAILY_GAMES_GOAL).toBe(100);
-    expect(coinsToUsd(randomBonusCoins(() => 0))).toBe(0.01);
-    expect(coinsToUsd(randomBonusCoins(() => 0.9999))).toBe(0.05);
-  });
   it("minimum withdraw is $0.02", () => expect(MIN_WITHDRAW_USD).toBe(0.02));
 });
 
 describe("rules", () => {
-  it("30 winners share exactly $10", () => {
+  it("30 winners receive whole-cent prizes that total exactly $10.00", () => {
     let sum = 0;
-    for (let r = 1; r <= 30; r++) sum += prizeForRank(r);
-    expect(sum).toBeCloseTo(10, 6);
+    for (let r = 1; r <= 30; r++) {
+      sum += prizeForRankCents(r);
+      expect(prizeForRank(r) * 100).toBe(prizeForRankCents(r));
+    }
+    expect(sum).toBe(1_000);
   });
   it("ranks 31-50 get nothing", () => {
     expect(prizeForRank(31)).toBe(0);

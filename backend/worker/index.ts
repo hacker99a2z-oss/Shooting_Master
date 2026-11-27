@@ -18,6 +18,7 @@ import { destinationInput, isBep20Destination } from "../wallet-destination.ts";
 import { activeAdSession, dailyFreePlayAvailable, rewardedAdSessionEligible, nextAdReadyAt } from "../game-access.ts";
 import { normalizeSecret, rawQueryValues, secretFingerprint, secretMatches } from "../adsgram-secret.ts";
 import { verifyBattleReplay } from "../game-replay.ts";
+import { prizeForRankCents } from "../../frontend/src/lib/rules.ts";
 import { approvalPayoutLimitError, parseAdminTelegramIds, parseWithdrawalApprovalCallback, withdrawalAmountsFromUsd } from "../withdrawal-approval.ts";
 
 interface Env {
@@ -40,7 +41,6 @@ const COINS_PER_KILL=10, MIN_ENEMIES=9, MAX_ENEMIES=12;
 /** Daily Games cash claims are USD cents, credited only to withdraw balance. */
 const DAILY_GOAL_REWARDS_CENTS:Record<number,number>={10:3,20:4};
 function claimedGoalsToday(row:Row):number[]{return row.claimed_goals_date===today()?String(row.claimed_goals??"").split(",").filter(Boolean).map(Number):[];}
-const DAILY_GAMES_GOAL=100, BONUS_MIN_CENTS=1, BONUS_MAX_CENTS=5;
 const REFERRAL_REWARD=100, REFERRAL_GAMES_NEEDED=10;
 const MIN_MS_PER_KILL=500, SEASON_MS=172800000, GAME_TTL_MS=1200000, AD_TTL_MS=300000;
 type TelegramUser={id:number;first_name:string;username?:string;photo_url?:string};
@@ -94,7 +94,7 @@ function view(row:Row){
     canPlayFree:row.last_play_date!==t,extraPlays:Number(row.extra_plays),gamesPlayed:Number(row.games_played),
     bestScore:Number(row.best_score),referralCount:Number(row.joined_referral_count??row.referral_count),referralPaidCount:Number(row.paid_referral_count??row.referral_count),photoUrl:row.photo_url==null?null:String(row.photo_url),
     adReadyAt:row.ad_ready_at==null?0:Number(row.ad_ready_at),
-    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,bonusClaimedToday:row.bonus_claimed_date===t,claimedGoals:claimedGoalsToday(row),
+    dailyGames:row.daily_games_date===t?Number(row.daily_games):0,claimedGoals:claimedGoalsToday(row),
     serverNow:Date.now()};
 }
 async function ensurePlayer(db:any,user:AuthUser,startParam=""){
@@ -110,6 +110,58 @@ async function txRun(db:any,fn:(tx:any)=>Promise<any>){
   const tx=await db.transaction("write");
   try{const value=await fn(tx);await tx.commit();return value;}
   catch(e){await tx.rollback();throw e;}
+}
+
+let lastLeaderboardSettlementCheckSeason = -1;
+async function settleExpiredLeaderboardSeason(db:any,now=Date.now()){
+  const currentSeason=seasonId(now);
+  if(lastLeaderboardSettlementCheckSeason===currentSeason){
+    return {settled:false,seasonId:currentSeason-1,winnerCount:0,totalCents:0,alreadyChecked:true};
+  }
+  const expiredSeason=currentSeason-1;
+  const settledAt=new Date(now).toISOString();
+  const result=await txRun(db,async(tx)=>{
+    // One unique row claims each expired round; the claim and all balance
+    // credits are committed together to prevent duplicate prizes.
+    const claim=await tx.execute({
+      sql:"INSERT OR IGNORE INTO leaderboard_season_settlements (season_id,settled_at,winner_count,total_cents) VALUES (?,?,0,0)",
+      args:[expiredSeason,settledAt]
+    });
+    if(claim.rowsAffected!==1){
+      return {settled:false,seasonId:expiredSeason,winnerCount:0,totalCents:0,alreadyChecked:true};
+    }
+    const rows=await tx.execute({
+      sql:"SELECT tg_id FROM players WHERE season_id=? AND games_played>=1 ORDER BY season_coins DESC,created_at ASC,tg_id ASC LIMIT 30",
+      args:[expiredSeason]
+    });
+    let winnerCount=0,totalCents=0;
+    for(let i=0;i<rows.rows.length;i++){
+      const tgId=Number((rows.rows[i] as Row).tg_id);
+      const rank=i+1,amountCents=prizeForRankCents(rank);
+      if(amountCents<=0)continue;
+      await tx.execute({
+        sql:"INSERT INTO leaderboard_season_rewards (season_id,tg_id,final_rank,amount_cents,created_at) VALUES (?,?,?,?,?)",
+        args:[expiredSeason,tgId,rank,amountCents,settledAt]
+      });
+      const credited=await tx.execute({
+        sql:"UPDATE players SET withdraw_balance_cents=withdraw_balance_cents+? WHERE tg_id=?",
+        args:[amountCents,tgId]
+      });
+      if(credited.rowsAffected!==1)throw new Error("Leaderboard prize recipient could not be credited");
+      winnerCount++;
+      totalCents+=amountCents;
+    }
+    await tx.execute({
+      sql:"UPDATE leaderboard_season_settlements SET winner_count=?,total_cents=? WHERE season_id=?",
+      args:[winnerCount,totalCents,expiredSeason]
+    });
+    return {settled:true,seasonId:expiredSeason,winnerCount,totalCents,alreadyChecked:false};
+  });
+  lastLeaderboardSettlementCheckSeason=currentSeason;
+  if(result.settled)console.info("[leaderboard] season rewards credited",{
+    seasonId:result.seasonId,winnerCount:result.winnerCount,totalCents:result.totalCents
+  });
+  return result;
 }
 
 async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:number,kills:number){
@@ -137,12 +189,6 @@ async function settleGameResult(db:any,tx:any,tgId:number,session:Row,score:numb
   return {...view(p!),reward,pendingVerification:false};
 }
 
-function prize(rank:number){
-  if(rank<1||rank>30)return 0;
-  const step=(30*0.5-10)/(30*29/2);
-  return Math.max(0,0.5-(rank-1)*step);
-}
-function randomBonusCents(){return BONUS_MIN_CENTS+Math.floor(Math.random()*(BONUS_MAX_CENTS-BONUS_MIN_CENTS+1));}
 function walletValid(value:string){return /^0x[a-fA-F0-9]{40}$/.test(value)||/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value);}
 
 function newWalletConnectTicket(){
@@ -912,6 +958,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
     }
     const db=dbFor(env);
     try{
+      await settleExpiredLeaderboardSeason(db).catch(error=>console.error("[leaderboard] settlement check failed",error));
       const outcome=await txRun(db,async(tx)=>{
         const player=await playerRow(db,tgId,tx);
         if(!player)return {ok:false as const,status:404,error:"Player not found",reason:"player_not_found"};
@@ -984,6 +1031,7 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
   try{user=await verifyTelegram(body.initData,env);}catch(e){return json({error:e instanceof Error?e.message:"Authentication failed"},401);}
   const db=dbFor(env);
   try{
+    await settleExpiredLeaderboardSeason(db).catch(error=>console.error("[leaderboard] settlement check failed",error));
     if(path==="/api/me")return json(view(await ensurePlayer(db,user,typeof body.startParam==="string"?body.startParam:"")));
 
     if(path==="/api/wallet/connect-ticket"){
@@ -1263,25 +1311,10 @@ async function api(request:Request,env:Env,ctx:ExecutionContext){
         return json(result);
       }catch(e){return json({error:e instanceof Error?e.message:"Claim failed"},400);}
     }
-    if(path==="/api/bonus/claim"){
-      const result=await txRun(db,async(tx)=>{
-        const p=await playerRow(db,user.id,tx);if(!p)throw new Error("Player not found");
-        if(p.daily_games_date!==today()||Number(p.daily_games)<DAILY_GAMES_GOAL)throw new Error("Play 100 games today to claim");
-        if(p.bonus_claimed_date===today())throw new Error("Daily bonus already claimed");
-        const amountCents=randomBonusCents();
-        const claimed=await tx.execute({
-          sql:"UPDATE players SET withdraw_balance_cents=withdraw_balance_cents+?,bonus_claimed_date=? WHERE tg_id=? AND (bonus_claimed_date IS NULL OR bonus_claimed_date<>?)",
-          args:[amountCents,today(),user.id,today()]
-        });
-        if(claimed.rowsAffected!==1)throw new Error("Daily bonus already claimed");
-        return {...view((await playerRow(db,user.id,tx))!),balanceBonusCents:amountCents};
-      });
-      return json(result);
-    }
     if(path==="/api/leaderboard"){
       const sid=seasonId();
-      const rows=await db.execute({sql:"SELECT tg_id,first_name,username,season_coins FROM players WHERE season_id=? AND games_played>=1 ORDER BY season_coins DESC,created_at ASC LIMIT 50",args:[sid]});
-      return json({list:rows.rows.map((r:any,i:number)=>({rank:i+1,tgId:Number(r.tg_id),name:String(r.first_name),username:r.username==null?null:String(r.username),coins:Number(r.season_coins),prize:prize(i+1),isMe:Number(r.tg_id)===user.id})),seasonEndsAt:(sid+1)*SEASON_MS});
+      const rows=await db.execute({sql:"SELECT tg_id,first_name,username,season_coins FROM players WHERE season_id=? AND games_played>=1 ORDER BY season_coins DESC,created_at ASC,tg_id ASC LIMIT 50",args:[sid]});
+      return json({list:rows.rows.map((r:any,i:number)=>({rank:i+1,tgId:Number(r.tg_id),name:String(r.first_name),username:r.username==null?null:String(r.username),coins:Number(r.season_coins),prize:prizeForRankCents(i+1)/100,isMe:Number(r.tg_id)===user.id})),seasonEndsAt:(sid+1)*SEASON_MS});
     }
     if(path==="/api/withdrawals"){
       const rows=await db.execute({sql:"SELECT id,coins,usd,wallet,status,created_at,payout_tx_hash,payout_asset,payout_network,payout_error,channel_post_url FROM withdrawals WHERE tg_id=? ORDER BY created_at DESC LIMIT 5",args:[user.id]});
@@ -1384,6 +1417,11 @@ async function cleanup(env:Env){
     ],"write");
   }finally{db.close();}
 }
+async function settleLeaderboardFromMaintenance(env:Env){
+  const db=dbFor(env);
+  try{return await settleExpiredLeaderboardSeason(db);}
+  finally{db.close();}
+}
 export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext){
     if(request.method==="OPTIONS"){
@@ -1394,7 +1432,12 @@ export default {
     catch(e){console.error("Worker unavailable",e);return json({error:"Service temporarily unavailable"},503);}
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext){
-    ctx.waitUntil(Promise.all([cleanup(env),recoverPendingPayouts(env),announceMissedPayouts(env)]));
+    ctx.waitUntil(Promise.all([
+      cleanup(env),
+      recoverPendingPayouts(env),
+      announceMissedPayouts(env),
+      settleLeaderboardFromMaintenance(env)
+    ]));
   },
   async queue(batch:MessageBatch<PayoutMessage>,env:Env){
     const db=dbFor(env);try{

@@ -92,6 +92,15 @@ try {
   } else {
     console.log("Turso schema migration 0010 already applied.");
   }
+
+  const leaderboardRewardsMigration = await db.execute("SELECT version FROM schema_migrations WHERE version=12 LIMIT 1");
+  if (!leaderboardRewardsMigration.rows.length) {
+    const leaderboardRewardsSql = await readFile(new URL("../migrations/0012_leaderboard_rewards.sql", import.meta.url), "utf8");
+    await db.executeMultiple(leaderboardRewardsSql);
+    console.log("Turso schema migration 0012 applied.");
+  } else {
+    console.log("Turso schema migration 0012 already applied.");
+  }
 } finally {
   db.close();
 }

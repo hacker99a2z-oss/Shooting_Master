@@ -14,15 +14,6 @@ export function rewardForKills(kills: number): number {
 // After every ad-unlocked game the next ad unlocks in 3 minutes. The daily free game sets no timer.
 export const AD_COOLDOWN_MS = 3 * 60 * 1000;
 
-// Daily challenge: play 100 games in one day, then claim a random $0.01–$0.05 bonus.
-export const DAILY_GAMES_GOAL = 100;
-export const BONUS_MIN_COINS = 1_000; // $0.01
-export const BONUS_MAX_COINS = 5_000; // $0.05
-export function randomBonusCoins(rand = Math.random): number {
-  const steps = (BONUS_MAX_COINS - BONUS_MIN_COINS) / 100;
-  return BONUS_MIN_COINS + Math.floor(rand() * (steps + 1)) * 100;
-}
-
 export const LEADERBOARD_MIN_COINS = 500;
 export const LEADERBOARD_SHOWN = 50;
 export const PRIZE_WINNERS = 30;
@@ -31,14 +22,29 @@ export const SEASON_MS = 2 * 24 * 60 * 60 * 1000;
 export const MIN_WITHDRAW_USD = 0.02;
 export const MAX_PENDING_AD_PLAYS = 3;
 
-// Linear prize curve: rank 1 gets $0.50, each rank drops by the same small step,
-// so neighbouring winners differ by ~1 cent and the 30 prizes sum to $10.
+// Linear prize curve: rank 1 starts at $0.50 and the top 30 share exactly $10.
+// Whole-cent amounts use largest remainders so credited prizes total $10.00.
 const TOP_PRIZE = 0.5;
 const STEP = (PRIZE_WINNERS * TOP_PRIZE - PRIZE_POOL_USD) / ((PRIZE_WINNERS * (PRIZE_WINNERS - 1)) / 2);
+const exactPrizeCents = Array.from({ length: PRIZE_WINNERS }, (_, index) =>
+  (TOP_PRIZE - index * STEP) * 100,
+);
+const prizeCents = exactPrizeCents.map((amount) => Math.floor(amount + Number.EPSILON));
+const remainingPrizeCents = PRIZE_POOL_USD * 100 - prizeCents.reduce((sum, amount) => sum + amount, 0);
+const centPriority = exactPrizeCents
+  .map((amount, index) => ({ index, remainder: amount - prizeCents[index] }))
+  .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+for (const { index } of centPriority.slice(0, remainingPrizeCents)) {
+  prizeCents[index] += 1;
+}
+
+export function prizeForRankCents(rank: number): number {
+  if (!Number.isInteger(rank) || rank < 1 || rank > PRIZE_WINNERS) return 0;
+  return prizeCents[rank - 1];
+}
 
 export function prizeForRank(rank: number): number {
-  if (rank < 1 || rank > PRIZE_WINNERS) return 0;
-  return TOP_PRIZE - (rank - 1) * STEP;
+  return prizeForRankCents(rank) / 100;
 }
 
 export function coinsToUsd(coins: number): number {
