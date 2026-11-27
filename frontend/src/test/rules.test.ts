@@ -18,8 +18,10 @@ describe("rules", () => {
   it("30 winners receive whole-cent prizes that total exactly $10.00", () => {
     let sum = 0;
     for (let r = 1; r <= 30; r++) {
-      sum += prizeForRankCents(r);
-      expect(prizeForRank(r) * 100).toBe(prizeForRankCents(r));
+      const cents = prizeForRankCents(r);
+      sum += cents;
+      // Dollar amounts are IEEE-754 numbers, so convert back to cents with rounding.
+      expect(Math.round(prizeForRank(r) * 100)).toBe(cents);
     }
     expect(sum).toBe(1_000);
   });
@@ -27,8 +29,10 @@ describe("rules", () => {
     expect(prizeForRank(31)).toBe(0);
     expect(prizeForRank(50)).toBe(0);
   });
-  it("neighbouring prizes stay close (under 2 cents apart)", () => {
-    for (let r = 1; r < 30; r++) expect(prizeForRank(r) - prizeForRank(r + 1)).toBeLessThan(0.02);
+  it("neighbouring whole-cent prizes differ by no more than 2 cents", () => {
+    for (let r = 1; r < 30; r++) {
+      expect(Math.abs(prizeForRankCents(r) - prizeForRankCents(r + 1))).toBeLessThanOrEqual(2);
+    }
   });
   it("100000 coins = $1", () => {
     expect(coinsToUsd(100_000)).toBe(1);
